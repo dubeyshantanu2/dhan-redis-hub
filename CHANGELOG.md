@@ -9,6 +9,10 @@ All notable changes to `dhan-redis-hub`.
   - Configured automated test & deploy pipeline that triggers on merge to `main`.
   - Runs unit tests via `pytest` before deploying to Fly.io Mumbai (`bom`) region using `FLY_API_TOKEN` secret.
   - Added `pytest.ini` with `pythonpath = .` for clean test imports.
+- **Migration Guide & Project Checklist (`docs/DHAN_REDIS_HUB_MIGRATION.md`)**:
+  - Added comprehensive AI Agent context and 4-step migration guide.
+  - Added multi-project migration checklist (Kronos [x], ARES [ ], Aeolus [ ], Argus [ ], gamma-blaster [ ], stock-screener [ ], Kairos [ ]).
+  - Synced to Obsidian Vault at `~/Documents/Obsidian/Trading Methodology/Dhan Redis Hub Migration Guide.md`.
 
 ## [1.1.0] - 2026-07-26
 
