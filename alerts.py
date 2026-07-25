@@ -26,12 +26,13 @@ async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = T
     redis_status = f"CONNECTED ({settings.redis_host}:{settings.redis_port})" if redis_connected else "DISCONNECTED"
     auth_status = "ACTIVE (Supabase Sync)" if auth_synced else "FAILED"
     gov_status = f"ACTIVE ({settings.rate_limit_option_chain_secs}s interval)"
+    overall_status = "ONLINE" if (redis_connected and auth_synced) else "DEGRADED"
 
     msg = f"""```diff
 + =================================================================
 + 🚀 DHAN REDIS HUB — Initialization Complete
 + =================================================================
-+ [+] Status        : ONLINE
++ [+] Status        : {overall_status}
 + [+] Fly Region    : {fly_region}
 + [+] Redis Cache   : {redis_status}
 + [+] Dhan Auth     : {auth_status}
@@ -52,16 +53,22 @@ async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = T
 
 async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldown_secs: float = ERROR_COOLDOWN_SECS) -> None:
     """
-    Sends a system alert regarding errors to Discord with built-in per-error cooldown coalescing.
+    Sends a system alert regarding errors to Discord with built-in per-error cooldown coalescing and state pruning.
     """
     webhook_url = settings.discord_health_webhook_url
     if not webhook_url:
         logger.debug("Discord health webhook URL not configured, skipping error alert.")
         return
 
+    now_mono = time.monotonic()
+    
+    # Prune expired cooldown entries to keep memory bounded
+    expired_keys = [k for k, t in _last_error_times.items() if (now_mono - t) > cooldown_secs]
+    for k in expired_keys:
+        _last_error_times.pop(k, None)
+
     # Error deduplication & cooldown check
     error_key = f"{component}:{error_msg}"
-    now_mono = time.monotonic()
     if error_key in _last_error_times and (now_mono - _last_error_times[error_key]) < cooldown_secs:
         logger.debug(f"Skipping duplicate error alert for '{error_key}' (cooldown active).")
         return
@@ -89,6 +96,7 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldow
             resp.raise_for_status()
             logger.info(f"Sent error alert to Discord health channel: {error_msg}")
         except Exception as e:
+            _last_error_times.pop(error_key, None)  # Reset cooldown state on delivery failure
             logger.error(f"Failed to send Discord error alert: {e}")
 
 async def send_shutdown_alert(reason: str = "Service shutdown / Machine restart") -> None:
