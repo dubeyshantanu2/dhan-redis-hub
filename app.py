@@ -131,7 +131,7 @@ def trigger_auth_sync():
 @app.post("/scrip-master")
 async def get_scrip_master():
     data = await fetch_and_cache_scrip_master(redis_client)
-    if not data:
+    if data is None:
         raise HTTPException(status_code=502, detail="Failed to download Scrip Master CSV.")
     return data
 
@@ -140,7 +140,7 @@ async def get_optionchain(req: OptionChainReq):
     data = await fetch_and_cache_option_chain(
         redis_client, req.symbol, req.underlying_scrip, req.underlying_seg, req.expiry
     )
-    if not data:
+    if data is None:
         raise HTTPException(status_code=502, detail="Failed to fetch option chain from Dhan API.")
     return data
 
@@ -149,14 +149,14 @@ async def get_expirylist(req: ExpiryListReq):
     data = await fetch_and_cache_expiry_list(
         redis_client, req.symbol, req.underlying_scrip, req.underlying_seg
     )
-    if not data:
+    if data is None:
         raise HTTPException(status_code=502, detail="Failed to fetch expiry list from Dhan API.")
     return data
 
 @app.post("/quote")
 async def get_quote(req: QuoteReq):
     data = await fetch_and_cache_quote(redis_client, req.security_id, req.exchange_segment)
-    if not data:
+    if data is None:
         raise HTTPException(status_code=502, detail="Failed to fetch quote from Dhan API.")
     return data
 
@@ -171,6 +171,6 @@ async def get_candles(req: CandlesReq):
         req.from_date,
         req.to_date
     )
-    if not data:
+    if data is None:
         raise HTTPException(status_code=502, detail="Failed to fetch candles from Dhan API.")
     return data

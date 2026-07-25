@@ -106,7 +106,7 @@ async def fetch_and_cache_option_chain(
                 resp.raise_for_status()
                 data = resp.json()
 
-                if data.get("status") == "success" or "data" in data:
+                if isinstance(data, dict) and ("oc" in data or "data" in data or "last_price" in data or data.get("status") == "success"):
                     redis_client.set(cache_key, json.dumps(data), ex=settings.ttl_option_chain_market)
                     logger.info(f"Cached option chain for {symbol} ({expiry}) in Redis under '{cache_key}'")
                     return data
@@ -202,8 +202,12 @@ async def fetch_and_cache_quote(
             resp.raise_for_status()
             data = resp.json()
 
-            quote_data = data.get("data", {}).get(str(security_id), {})
-            if quote_data:
+            raw_data = data.get("data", {}) if isinstance(data, dict) else {}
+            quote_data = (
+                raw_data.get(exchange_segment, {}).get(str(security_id))
+                or raw_data.get(str(security_id))
+            )
+            if quote_data and isinstance(quote_data, dict):
                 redis_client.set(cache_key, json.dumps(quote_data), ex=settings.ttl_quote)
                 logger.info(f"Cached quote for security ID {security_id} under '{cache_key}'")
                 return quote_data
