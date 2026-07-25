@@ -2,6 +2,12 @@
 
 All notable changes to `dhan-redis-hub`.
 
+## [1.4.1] - 2026-07-26
+
+### Fixed
+- **GitHub Actions Fly Deployment Timeout Fix (`.github/workflows/fly-deploy.yml`)**:
+  - Updated `flyctl deploy` step to use `--local-only` flag (`flyctl deploy --local-only || flyctl deploy`), building the Docker image inside the GitHub Actions runner rather than hanging on Fly.io remote builder connection timeouts (`deadline_exceeded`).
+
 ## [1.3.0] - 2026-07-26
 
 ### Added
