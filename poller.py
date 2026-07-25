@@ -27,6 +27,11 @@ async def fetch_and_cache_scrip_master(redis_client: Redis) -> dict | None:
     url = "https://images.dhan.co/api-data/api-scrip-master.csv"
     cache_key = "dhan:scrip_master"
 
+    cached = redis_client.get(cache_key)
+    if cached:
+        logger.debug(f"Cache HIT for scrip master '{cache_key}'")
+        return json.loads(cached)
+
     logger.info("Downloading Dhan Scrip Master CSV...")
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -67,6 +72,12 @@ async def fetch_and_cache_option_chain(
     Fetches the option chain for a given underlying & expiry, governed by RateGovernor,
     and caches the result in Redis under key 'dhan:optionchain:{symbol}:{expiry}'.
     """
+    cache_key = f"dhan:optionchain:{symbol.upper()}:{expiry}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        logger.debug(f"Cache HIT for option chain '{cache_key}'")
+        return json.loads(cached)
+
     auth = await get_valid_auth(redis_client)
     headers = {
         "access-token": auth["access_token"],
@@ -80,11 +91,10 @@ async def fetch_and_cache_option_chain(
     }
 
     url = f"{settings.dhan_api_base}/optionchain"
-    cache_key = f"dhan:optionchain:{symbol.upper()}:{expiry}"
 
     await rate_governor.wait_for_slot("optionchain", settings.rate_limit_option_chain_secs)
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         for attempt in range(1, 4):
             try:
                 resp = await client.post(url, headers=headers, json=payload)
@@ -120,6 +130,12 @@ async def fetch_and_cache_expiry_list(
     """
     Fetches available expiry dates for an underlying and caches in Redis under 'dhan:expirylist:{symbol}'.
     """
+    cache_key = f"dhan:expirylist:{symbol.upper()}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        logger.debug(f"Cache HIT for expiry list '{cache_key}'")
+        return json.loads(cached)
+
     auth = await get_valid_auth(redis_client)
     headers = {
         "access-token": auth["access_token"],
@@ -132,11 +148,10 @@ async def fetch_and_cache_expiry_list(
     }
 
     url = f"{settings.dhan_api_base}/optionchain/expirylist"
-    cache_key = f"dhan:expirylist:{symbol.upper()}"
 
     await rate_governor.wait_for_slot("expirylist", 1.0)
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
@@ -161,6 +176,12 @@ async def fetch_and_cache_quote(
     """
     Fetches market quote / LTP for a security and caches under 'dhan:quote:{security_id}'.
     """
+    cache_key = f"dhan:quote:{security_id}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        logger.debug(f"Cache HIT for quote '{cache_key}'")
+        return json.loads(cached)
+
     auth = await get_valid_auth(redis_client)
     headers = {
         "access-token": auth["access_token"],
@@ -172,11 +193,10 @@ async def fetch_and_cache_quote(
     }
 
     url = f"{settings.dhan_api_base}/marketfeed/quote"
-    cache_key = f"dhan:quote:{security_id}"
 
     await rate_governor.wait_for_slot("quote", settings.rate_limit_quote_secs)
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
@@ -205,6 +225,13 @@ async def fetch_and_cache_candles(
     """
     Fetches historical OHLCV candles and caches under 'dhan:candles:{security_id}:{interval}:{from_date}:{to_date}'.
     """
+    is_intraday = interval in ["1", "5", "15", "30", "60"]
+    cache_key = f"dhan:candles:{security_id}:{interval}:{from_date}:{to_date}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        logger.debug(f"Cache HIT for candles '{cache_key}'")
+        return json.loads(cached)
+
     auth = await get_valid_auth(redis_client)
     headers = {
         "access-token": auth["access_token"],
@@ -220,18 +247,16 @@ async def fetch_and_cache_candles(
         "toDate": to_date
     }
 
-    is_intraday = interval in ["1", "5", "15", "30", "60"]
     endpoint = "charts/intraday" if is_intraday else "charts/historical"
     if is_intraday:
         payload["interval"] = interval
 
     url = f"{settings.dhan_api_base}/{endpoint}"
-    cache_key = f"dhan:candles:{security_id}:{interval}:{from_date}:{to_date}"
     ttl = settings.ttl_candles_intraday if is_intraday else settings.ttl_candles_daily
 
     await rate_governor.wait_for_slot("candles", settings.rate_limit_candles_secs)
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
