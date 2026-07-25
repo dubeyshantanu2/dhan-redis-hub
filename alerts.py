@@ -1,9 +1,14 @@
+import os
+import time
 import logging
 import httpx
 from datetime import datetime, timezone, timedelta
 from config import settings
 
 logger = logging.getLogger("dhan-redis-hub.alerts")
+
+_last_error_times: dict[str, float] = {}
+ERROR_COOLDOWN_SECS: float = 60.0
 
 async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = True) -> None:
     """
@@ -17,18 +22,20 @@ async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = T
     ist = timezone(timedelta(hours=5, minutes=30))
     now_ist = datetime.now(ist).strftime("%d-%b-%Y %H:%M:%S")
 
-    redis_status = "CONNECTED (localhost:6379)" if redis_connected else "DISCONNECTED"
+    fly_region = os.getenv("FLY_REGION", "local")
+    redis_status = f"CONNECTED ({settings.redis_host}:{settings.redis_port})" if redis_connected else "DISCONNECTED"
     auth_status = "ACTIVE (Supabase Sync)" if auth_synced else "FAILED"
+    gov_status = f"ACTIVE ({settings.rate_limit_option_chain_secs}s interval)"
 
     msg = f"""```diff
 + =================================================================
 + 🚀 DHAN REDIS HUB — Initialization Complete
 + =================================================================
 + [+] Status        : ONLINE
-+ [+] Fly Region    : bom (Mumbai)
++ [+] Fly Region    : {fly_region}
 + [+] Redis Cache   : {redis_status}
 + [+] Dhan Auth     : {auth_status}
-+ [+] Rate Governor : ACTIVE (1 req/sec limit)
++ [+] Rate Governor : {gov_status}
 + [+] Time          : {now_ist} IST
 + =================================================================
 ```"""
@@ -43,14 +50,23 @@ async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = T
         except Exception as e:
             logger.error(f"Failed to send Discord startup alert: {e}")
 
-async def send_error_alert(error_msg: str, component: str = "Redis Hub") -> None:
+async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldown_secs: float = ERROR_COOLDOWN_SECS) -> None:
     """
-    Sends a system alert regarding errors (e.g. Redis disconnect, Dhan auth fail, 429 rate limit) to Discord.
+    Sends a system alert regarding errors to Discord with built-in per-error cooldown coalescing.
     """
     webhook_url = settings.discord_health_webhook_url
     if not webhook_url:
         logger.debug("Discord health webhook URL not configured, skipping error alert.")
         return
+
+    # Error deduplication & cooldown check
+    error_key = f"{component}:{error_msg}"
+    now_mono = time.monotonic()
+    if error_key in _last_error_times and (now_mono - _last_error_times[error_key]) < cooldown_secs:
+        logger.debug(f"Skipping duplicate error alert for '{error_key}' (cooldown active).")
+        return
+
+    _last_error_times[error_key] = now_mono
 
     ist = timezone(timedelta(hours=5, minutes=30))
     now_ist = datetime.now(ist).strftime("%H:%M:%S")
@@ -86,13 +102,14 @@ async def send_shutdown_alert(reason: str = "Service shutdown / Machine restart"
 
     ist = timezone(timedelta(hours=5, minutes=30))
     now_ist = datetime.now(ist).strftime("%d-%b-%Y %H:%M:%S")
+    fly_region = os.getenv("FLY_REGION", "local")
 
     msg = f"""```diff
 - =================================================================
 - 🛑 DHAN REDIS HUB — Microservice Shutdown
 - =================================================================
 - [-] Status    : OFFLINE
-- [-] Fly Region: bom (Mumbai)
+- [-] Fly Region: {fly_region}
 - [-] Reason    : {reason}
 - [-] Time      : {now_ist} IST
 - =================================================================
@@ -107,4 +124,3 @@ async def send_shutdown_alert(reason: str = "Service shutdown / Machine restart"
             logger.info("Sent shutdown alert to Discord health channel.")
         except Exception as e:
             logger.error(f"Failed to send Discord shutdown alert: {e}")
-

@@ -65,10 +65,11 @@ async def background_universe_poller():
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Initializing dhan-redis-hub microservice...")
-    auth_data = sync_dhan_credentials(redis_client)
     redis_ok = True
+    auth_data = None
     try:
         redis_ok = bool(redis_client.ping())
+        auth_data = sync_dhan_credentials(redis_client)
     except Exception as e:
         redis_ok = False
         logger.error(f"Redis Ping Failed: {e}")
