@@ -12,6 +12,9 @@ class Config(BaseModel):
     supabase_url: str = os.getenv("SUPABASE_URL", "")
     supabase_key: str = os.getenv("SUPABASE_KEY", "")
     
+    # Discord Health & System Alerts
+    discord_health_webhook_url: str | None = os.getenv("DISCORD_HEALTH_WEBHOOK_URL", os.getenv("DISCORD_WEBHOOK_URL", None))
+    
     # Dhan API
     dhan_api_base: str = os.getenv("DHAN_API_BASE", "https://api.dhan.co/v2")
     dhan_ws_url: str = os.getenv("DHAN_WS_URL", "wss://api-feed.dhan.co")
