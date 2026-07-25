@@ -16,6 +16,8 @@ from poller import (
 )
 from ws_feed import DhanWebSocketHub
 
+from alerts import send_startup_alert, send_error_alert, send_shutdown_alert
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("dhan-redis-hub.app")
 
@@ -56,14 +58,25 @@ async def background_universe_poller():
             break
         except Exception as e:
             logger.error(f"Error in background universe poller: {e}")
+            asyncio.create_task(send_error_alert(f"Background universe poller error: {e}", component="Poller Loop"))
             await asyncio.sleep(5.0)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Initializing dhan-redis-hub microservice...")
-    sync_dhan_credentials(redis_client)
-    
+    redis_ok = True
+    auth_data = None
+    try:
+        redis_ok = bool(redis_client.ping())
+        auth_data = sync_dhan_credentials(redis_client)
+    except Exception as e:
+        redis_ok = False
+        logger.error(f"Redis Ping Failed: {e}")
+        asyncio.create_task(send_error_alert(f"Redis connection failed: {e}", component="Redis Cache"))
+
+    asyncio.create_task(send_startup_alert(redis_connected=redis_ok, auth_synced=bool(auth_data)))
+
     # Start background tasks
     poller_task = asyncio.create_task(background_universe_poller())
     ws_task = asyncio.create_task(ws_hub.start())
@@ -72,6 +85,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down dhan-redis-hub...")
+    await send_shutdown_alert()
     ws_hub.stop()
     poller_task.cancel()
     ws_task.cancel()
