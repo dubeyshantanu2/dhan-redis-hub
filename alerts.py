@@ -74,3 +74,37 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub") -> None
             logger.info(f"Sent error alert to Discord health channel: {error_msg}")
         except Exception as e:
             logger.error(f"Failed to send Discord error alert: {e}")
+
+async def send_shutdown_alert(reason: str = "Service shutdown / Machine restart") -> None:
+    """
+    Sends a shutdown status message to Discord when the microservice stops entirely.
+    """
+    webhook_url = settings.discord_health_webhook_url
+    if not webhook_url:
+        logger.debug("Discord health webhook URL not configured, skipping shutdown alert.")
+        return
+
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(ist).strftime("%d-%b-%Y %H:%M:%S")
+
+    msg = f"""```diff
+- =================================================================
+- 🛑 DHAN REDIS HUB — Microservice Shutdown
+- =================================================================
+- [-] Status    : OFFLINE
+- [-] Fly Region: bom (Mumbai)
+- [-] Reason    : {reason}
+- [-] Time      : {now_ist} IST
+- =================================================================
+```"""
+
+    payload = {"content": msg}
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            resp = await client.post(webhook_url, json=payload)
+            resp.raise_for_status()
+            logger.info("Sent shutdown alert to Discord health channel.")
+        except Exception as e:
+            logger.error(f"Failed to send Discord shutdown alert: {e}")
+

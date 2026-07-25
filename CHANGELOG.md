@@ -5,11 +5,12 @@ All notable changes to `dhan-redis-hub`.
 ## [1.3.0] - 2026-07-26
 
 ### Added
-- **Discord System Health & Error Alert Logging (`alerts.py`)**:
-  - Implemented startup notification (`send_startup_alert`) posting microservice status, Fly.io region, Redis connectivity, and Dhan auth sync status to Discord system health channel.
-  - Implemented real-time error alert system (`send_error_alert`) notifying Discord on Redis disconnects, HTTP 429 rate limit backoffs, and background poller exceptions.
-  - Added `DISCORD_HEALTH_WEBHOOK_URL` configuration to `config.py`.
-  - Added unit test suite in `tests/test_alerts.py` (5/5 tests passing).
+- **3-Tier Discord System Health Alert Logging System (`alerts.py`)**:
+  - `send_startup_alert()`: Posts green initialization status block to Discord on launch (Status, Fly Region, Redis connectivity, Dhan Auth status, Rate Governor status).
+  - `send_error_alert()`: Real-time alert system notifying Discord on Redis disconnects, HTTP 429 rate limit backoffs, and background poller exceptions.
+  - `send_shutdown_alert()`: Fired on service shutdown / machine restart posting offline status block.
+  - Configured `DISCORD_HEALTH_WEBHOOK_URL` secret on Fly.io production machine.
+  - Added unit test suite in `tests/test_alerts.py` (6/6 pytest suite passing).
 
 ## [1.2.0] - 2026-07-26
 

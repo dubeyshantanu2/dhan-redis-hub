@@ -16,7 +16,7 @@ from poller import (
 )
 from ws_feed import DhanWebSocketHub
 
-from alerts import send_startup_alert, send_error_alert
+from alerts import send_startup_alert, send_error_alert, send_shutdown_alert
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("dhan-redis-hub.app")
@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down dhan-redis-hub...")
+    await send_shutdown_alert()
     ws_hub.stop()
     poller_task.cancel()
     ws_task.cancel()
