@@ -2,7 +2,13 @@
 
 All notable changes to `dhan-redis-hub`.
 
-## [1.2.0] - 2026-07-26
+## [1.4.0] - 2026-07-26
+
+### Added
+- **Comprehensive Environment Template (`example.env` / `.env.example`)**:
+  - Documented all 19 environment variables used across Redis cache, Supabase auth sync, Discord health webhooks, Dhan API endpoints, Rate Governor thresholds, and TTL configurations.
+
+## [1.3.0] - 2026-07-26
 
 ### Added
 - **GitHub Actions Continuous Deployment Workflow (`.github/workflows/fly-deploy.yml`)**:
