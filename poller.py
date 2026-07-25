@@ -203,7 +203,7 @@ async def fetch_and_cache_quote(
             data = resp.json()
 
             quote_data = data.get("data", {}).get(str(security_id), {})
-            if quote_data:
+            if quote_data is not None:
                 redis_client.set(cache_key, json.dumps(quote_data), ex=settings.ttl_quote)
                 logger.info(f"Cached quote for security ID {security_id} under '{cache_key}'")
                 return quote_data
