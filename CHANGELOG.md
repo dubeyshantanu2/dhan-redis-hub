@@ -11,6 +11,8 @@ All notable changes to `dhan-redis-hub`.
   - `send_shutdown_alert()`: Fired on service shutdown / machine restart posting offline status block.
   - Configured `DISCORD_HEALTH_WEBHOOK_URL` secret on Fly.io production machine.
   - Added unit test suite in `tests/test_alerts.py` (6/6 pytest suite passing).
+- **Comprehensive Environment Template (`example.env` / `.env.example`)**:
+  - Documented all 19 environment variables used across Redis cache, Supabase auth sync, Discord health webhooks, Dhan API endpoints, Rate Governor thresholds, and TTL configurations.
 
 ## [1.2.0] - 2026-07-26
 
