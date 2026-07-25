@@ -106,7 +106,7 @@ async def fetch_and_cache_option_chain(
                 resp.raise_for_status()
                 data = resp.json()
 
-                if data.get("status") == "success" or "data" in data:
+                if isinstance(data, dict) and ("oc" in data or "data" in data or "last_price" in data or data.get("status") == "success"):
                     redis_client.set(cache_key, json.dumps(data), ex=settings.ttl_option_chain_market)
                     logger.info(f"Cached option chain for {symbol} ({expiry}) in Redis under '{cache_key}'")
                     return data
