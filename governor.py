@@ -16,9 +16,9 @@ class RateGovernor:
         self._global_last_call_time: float = 0.0
         self._lock = asyncio.Lock()
 
-    async def wait_for_slot(self, endpoint_category: str = "global", min_interval_secs: float = 1.0):
+    async def wait_for_slot(self, endpoint_category: str = "global", min_interval_secs: float = 1.25):
         """
-        Blocks until the minimum interval has elapsed both globally (1.0s) and for `endpoint_category`.
+        Blocks until the minimum interval has elapsed both globally (1.25s) and for `endpoint_category`.
         """
         async with self._lock:
             now = time.monotonic()
@@ -28,7 +28,7 @@ class RateGovernor:
             cat_elapsed = now - cat_last_time
             
             required_wait = max(
-                1.0 - global_elapsed,
+                1.25 - global_elapsed,
                 min_interval_secs - cat_elapsed,
                 0.0
             )

@@ -20,9 +20,9 @@ class Config(BaseModel):
     dhan_ws_url: str = os.getenv("DHAN_WS_URL", "wss://api-feed.dhan.co")
     
     # Rate Governor thresholds (min interval in seconds per endpoint type)
-    rate_limit_option_chain_secs: float = float(os.getenv("RATE_LIMIT_OPTION_CHAIN_SECS", "1.0"))
-    rate_limit_quote_secs: float = float(os.getenv("RATE_LIMIT_QUOTE_SECS", "1.0"))
-    rate_limit_candles_secs: float = float(os.getenv("RATE_LIMIT_CANDLES_SECS", "1.0"))
+    rate_limit_option_chain_secs: float = float(os.getenv("RATE_LIMIT_OPTION_CHAIN_SECS", "1.25"))
+    rate_limit_quote_secs: float = float(os.getenv("RATE_LIMIT_QUOTE_SECS", "1.25"))
+    rate_limit_candles_secs: float = float(os.getenv("RATE_LIMIT_CANDLES_SECS", "1.25"))
     
     # TTL Configurations (in seconds)
     ttl_option_chain_market: int = int(os.getenv("TTL_OPTION_CHAIN_MARKET", "2"))
