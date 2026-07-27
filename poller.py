@@ -157,10 +157,10 @@ async def fetch_and_cache_expiry_list(
             resp.raise_for_status()
             data = resp.json()
             
-            expiries = data.get("data", []) if isinstance(data, dict) else []
-            if expiries:
+            expiries = data.get("data") if isinstance(data, dict) else (data if isinstance(data, list) else None)
+            if isinstance(expiries, list):
                 redis_client.set(cache_key, json.dumps(expiries), ex=settings.ttl_expiry_list)
-                logger.info(f"Cached expiry list for {symbol} ({len(expiries)} expiries) under '{cache_key}'")
+                logger.info(f"Cached expiry list for {symbol} ({len(expiries)} expiries) under '{cache_key}' with {settings.ttl_expiry_list}s TTL")
                 return expiries
 
         except Exception as e:

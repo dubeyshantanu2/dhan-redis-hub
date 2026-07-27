@@ -3,6 +3,8 @@ import logging
 import httpx
 from redis import Redis
 
+from config import INDEX_SCRIP_MAP
+
 logger = logging.getLogger("dhan_redis_client")
 
 class DhanRedisClient:
@@ -55,12 +57,15 @@ class DhanRedisClient:
         self,
         symbol: str,
         expiry: str,
-        underlying_scrip: int = 13,
+        underlying_scrip: int | None = None,
         underlying_seg: str = "IDX_I"
     ) -> dict | None:
         """
         Retrieves option chain from Redis. On cache miss, requests the central hub to fetch and cache it.
         """
+        if underlying_scrip is None:
+            underlying_scrip = INDEX_SCRIP_MAP.get(symbol.upper(), 13)
+
         cache_key = f"dhan:optionchain:{symbol.upper()}:{expiry}"
         cached = self.redis.get(cache_key)
 
@@ -89,12 +94,15 @@ class DhanRedisClient:
     def get_expiry_list(
         self,
         symbol: str,
-        underlying_scrip: int = 13,
+        underlying_scrip: int | None = None,
         underlying_seg: str = "IDX_I"
     ) -> list[str] | None:
         """
         Retrieves expiry list for an underlying from Redis.
         """
+        if underlying_scrip is None:
+            underlying_scrip = INDEX_SCRIP_MAP.get(symbol.upper(), 13)
+
         cache_key = f"dhan:expirylist:{symbol.upper()}"
         cached = self.redis.get(cache_key)
 

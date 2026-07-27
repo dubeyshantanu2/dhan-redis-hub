@@ -2,6 +2,16 @@
 
 All notable changes to `dhan-redis-hub`.
 
+## [1.4.0] - 2026-07-27
+
+### Fixed
+- **Poller Rate Governance & 429 Prevention (TASK-429)**:
+  - Added `await asyncio.sleep(1.0)` between index iterations in `background_universe_poller()` to eliminate rapid request bursts to Dhan API.
+  - Increased post-pass poller loop sleep from `2.0s` to `5.0s`.
+  - Guaranteed `dhan:expirylist:<SYMBOL>` caching with 12-hour TTL (`ex=43200`) in `poller.py` `fetch_and_cache_expiry_list()`.
+  - Included `SENSEX` (`underlying_id: 12`) in default indices configuration.
+  - Added unit test suite in `tests/test_redis_hub.py` for expiry list 12h TTL caching and poller delays (10/10 pytest suite passing).
+
 ## [1.3.0] - 2026-07-26
 
 ### Added
