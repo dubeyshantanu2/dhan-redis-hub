@@ -193,26 +193,30 @@ async def fetch_and_cache_quote(
 
     url = f"{settings.dhan_api_base}/marketfeed/quote"
 
-    await rate_governor.wait_for_slot("quote", settings.rate_limit_quote_secs)
-
     async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            resp = await client.post(url, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        for attempt in range(1, 4):
+            await rate_governor.wait_for_slot("quote", settings.rate_limit_quote_secs)
+            try:
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code == 429:
+                    await rate_governor.handle_429_backoff(attempt)
+                    continue
 
-            raw_data = data.get("data", {}) if isinstance(data, dict) else {}
-            quote_data = (
-                raw_data.get(exchange_segment, {}).get(str(security_id))
-                or raw_data.get(str(security_id))
-            )
-            if quote_data and isinstance(quote_data, dict):
-                redis_client.set(cache_key, json.dumps(quote_data), ex=settings.ttl_quote)
-                logger.info(f"Cached quote for security ID {security_id} under '{cache_key}'")
-                return quote_data
+                resp.raise_for_status()
+                data = resp.json()
 
-        except Exception as e:
-            logger.error(f"Error fetching quote for {security_id}: {e}")
+                raw_data = data.get("data", {}) if isinstance(data, dict) else {}
+                quote_data = (
+                    raw_data.get(exchange_segment, {}).get(str(security_id))
+                    or raw_data.get(str(security_id))
+                )
+                if quote_data and isinstance(quote_data, dict):
+                    redis_client.set(cache_key, json.dumps(quote_data), ex=settings.ttl_quote)
+                    logger.info(f"Cached quote for security ID {security_id} under '{cache_key}'")
+                    return quote_data
+
+            except Exception as e:
+                logger.error(f"Error fetching quote for {security_id}: {e}")
 
     return None
 
@@ -257,20 +261,24 @@ async def fetch_and_cache_candles(
     url = f"{settings.dhan_api_base}/{endpoint}"
     ttl = settings.ttl_candles_intraday if is_intraday else settings.ttl_candles_daily
 
-    await rate_governor.wait_for_slot("candles", settings.rate_limit_candles_secs)
-
     async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            resp = await client.post(url, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        for attempt in range(1, 4):
+            await rate_governor.wait_for_slot("candles", settings.rate_limit_candles_secs)
+            try:
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code == 429:
+                    await rate_governor.handle_429_backoff(attempt)
+                    continue
 
-            if data:
-                redis_client.set(cache_key, json.dumps(data), ex=ttl)
-                logger.info(f"Cached historical candles for {security_id} under '{cache_key}'")
-                return data
+                resp.raise_for_status()
+                data = resp.json()
 
-        except Exception as e:
-            logger.error(f"Error fetching historical candles for {security_id}: {e}")
+                if data:
+                    redis_client.set(cache_key, json.dumps(data), ex=ttl)
+                    logger.info(f"Cached historical candles for {security_id} under '{cache_key}'")
+                    return data
+
+            except Exception as e:
+                logger.error(f"Error fetching historical candles for {security_id}: {e}")
 
     return None
