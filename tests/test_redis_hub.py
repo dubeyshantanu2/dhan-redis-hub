@@ -68,6 +68,26 @@ async def test_fetch_and_cache_expiry_list_caching():
     mock_redis.get.return_value = json.dumps(["2026-07-30", "2026-08-06"])
     res_hit = await fetch_and_cache_expiry_list(mock_redis, "NIFTY", 13, "IDX_I")
     assert res_hit == ["2026-07-30", "2026-08-06"]
+    assert mock_post.await_count == 1
+
+@pytest.mark.asyncio
+async def test_fetch_and_cache_expiry_list_raw_list_response():
+    from poller import fetch_and_cache_expiry_list
+    mock_redis = MagicMock()
+
+    fake_auth = json.dumps({"client_id": "123", "access_token": "abc"})
+    mock_redis.get.side_effect = lambda key: fake_auth if key == "dhan:auth" else None
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_resp.json.return_value = ["2026-07-30", "2026-08-06"]
+
+    with patch("httpx.AsyncClient.post", new_callable=pytest.importorskip("unittest.mock").AsyncMock) as mock_post:
+        mock_post.return_value = fake_resp
+        res = await fetch_and_cache_expiry_list(mock_redis, "BANKNIFTY", 25, "IDX_I")
+
+    assert res == ["2026-07-30", "2026-08-06"]
+    mock_redis.set.assert_called_once_with("dhan:expirylist:BANKNIFTY", json.dumps(["2026-07-30", "2026-08-06"]), ex=43200)
 
 @pytest.mark.asyncio
 async def test_background_universe_poller_delays():
