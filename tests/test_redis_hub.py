@@ -118,3 +118,26 @@ async def test_background_universe_poller_delays():
     assert mock_expiry.call_count == 4
     assert mock_oc.call_count == 4
 
+def test_index_scrip_resolution():
+    from config import INDEX_SCRIP_MAP
+    from client import DhanRedisClient
+    
+    assert INDEX_SCRIP_MAP["NIFTY"] == 13
+    assert INDEX_SCRIP_MAP["BANKNIFTY"] == 25
+    assert INDEX_SCRIP_MAP["FINNIFTY"] == 27
+    assert INDEX_SCRIP_MAP["SENSEX"] == 12
+
+    mock_redis = MagicMock()
+    mock_redis.get.return_value = json.dumps({"status": "success"})
+    
+    with patch("client.Redis", return_value=mock_redis):
+        client = DhanRedisClient()
+        # NIFTY defaults to 13
+        client.get_option_chain("NIFTY", "2026-07-30")
+        mock_redis.get.assert_called_with("dhan:optionchain:NIFTY:2026-07-30")
+        
+        # BANKNIFTY auto-resolves ID 25 when underlying_scrip is None
+        client.get_expiry_list("BANKNIFTY")
+        mock_redis.get.assert_called_with("dhan:expirylist:BANKNIFTY")
+
+

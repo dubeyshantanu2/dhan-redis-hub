@@ -98,16 +98,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+from config import settings, INDEX_SCRIP_MAP
+
 class OptionChainReq(BaseModel):
     symbol: str
-    underlying_scrip: int
-    underlying_seg: str
+    underlying_scrip: int | None = None
+    underlying_seg: str = "IDX_I"
     expiry: str
 
 class ExpiryListReq(BaseModel):
     symbol: str
-    underlying_scrip: int
-    underlying_seg: str
+    underlying_scrip: int | None = None
+    underlying_seg: str = "IDX_I"
 
 class QuoteReq(BaseModel):
     security_id: str
@@ -152,8 +154,9 @@ async def get_scrip_master():
 
 @app.post("/optionchain")
 async def get_optionchain(req: OptionChainReq):
+    scrip_id = req.underlying_scrip if req.underlying_scrip is not None else INDEX_SCRIP_MAP.get(req.symbol.upper(), 13)
     data = await fetch_and_cache_option_chain(
-        redis_client, req.symbol, req.underlying_scrip, req.underlying_seg, req.expiry
+        redis_client, req.symbol, scrip_id, req.underlying_seg, req.expiry
     )
     if data is None:
         raise HTTPException(status_code=502, detail="Failed to fetch option chain from Dhan API.")
@@ -161,8 +164,9 @@ async def get_optionchain(req: OptionChainReq):
 
 @app.post("/expirylist")
 async def get_expirylist(req: ExpiryListReq):
+    scrip_id = req.underlying_scrip if req.underlying_scrip is not None else INDEX_SCRIP_MAP.get(req.symbol.upper(), 13)
     data = await fetch_and_cache_expiry_list(
-        redis_client, req.symbol, req.underlying_scrip, req.underlying_seg
+        redis_client, req.symbol, scrip_id, req.underlying_seg
     )
     if data is None:
         raise HTTPException(status_code=502, detail="Failed to fetch expiry list from Dhan API.")

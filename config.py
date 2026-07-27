@@ -41,4 +41,11 @@ class Config(BaseModel):
         {"symbol": "SENSEX", "underlying_id": 12, "segment": "IDX_I"},
     ]
 
+INDEX_SCRIP_MAP: dict[str, int] = {
+    "NIFTY": 13,
+    "BANKNIFTY": 25,
+    "FINNIFTY": 27,
+    "SENSEX": 12,
+}
+
 settings = Config()
