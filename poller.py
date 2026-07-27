@@ -92,10 +92,9 @@ async def fetch_and_cache_option_chain(
 
     url = f"{settings.dhan_api_base}/optionchain"
 
-    await rate_governor.wait_for_slot("optionchain", settings.rate_limit_option_chain_secs)
-
     async with httpx.AsyncClient(timeout=30.0) as client:
         for attempt in range(1, 4):
+            await rate_governor.wait_for_slot("optionchain", settings.rate_limit_option_chain_secs)
             try:
                 resp = await client.post(url, headers=headers, json=payload)
                 

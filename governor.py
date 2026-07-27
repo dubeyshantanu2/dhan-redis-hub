@@ -7,28 +7,39 @@ logger = logging.getLogger("dhan-redis-hub.governor")
 class RateGovernor:
     """
     Async Rate Governor for Dhan API endpoints.
-    Enforces minimum time intervals per endpoint type across all workers/pollers.
+    Enforces a strict global 1.0s minimum time interval across ALL requests to Dhan API
+    as well as endpoint-specific minimum intervals across all workers/pollers.
     Handles automatic backoff on 429 errors.
     """
     def __init__(self):
         self._last_call_times: dict[str, float] = {}
+        self._global_last_call_time: float = 0.0
         self._lock = asyncio.Lock()
 
-    async def wait_for_slot(self, endpoint_category: str, min_interval_secs: float):
+    async def wait_for_slot(self, endpoint_category: str = "global", min_interval_secs: float = 1.0):
         """
-        Blocks until the minimum interval for `endpoint_category` has elapsed since the last call.
+        Blocks until the minimum interval has elapsed both globally (1.0s) and for `endpoint_category`.
         """
         async with self._lock:
             now = time.monotonic()
-            last_time = self._last_call_times.get(endpoint_category, 0.0)
-            elapsed = now - last_time
             
-            if elapsed < min_interval_secs:
-                wait_time = min_interval_secs - elapsed
-                logger.debug(f"RateGovernor: Throttling {endpoint_category} for {wait_time:.3f}s")
-                await asyncio.sleep(wait_time)
+            global_elapsed = now - self._global_last_call_time
+            cat_last_time = self._last_call_times.get(endpoint_category, 0.0)
+            cat_elapsed = now - cat_last_time
             
-            self._last_call_times[endpoint_category] = time.monotonic()
+            required_wait = max(
+                1.0 - global_elapsed,
+                min_interval_secs - cat_elapsed,
+                0.0
+            )
+            
+            if required_wait > 0:
+                logger.debug(f"RateGovernor: Throttling {endpoint_category} for {required_wait:.3f}s")
+                await asyncio.sleep(required_wait)
+            
+            call_time = time.monotonic()
+            self._global_last_call_time = call_time
+            self._last_call_times[endpoint_category] = call_time
 
     async def handle_429_backoff(self, retry_count: int = 1, base_backoff_secs: float = 2.0):
         """
