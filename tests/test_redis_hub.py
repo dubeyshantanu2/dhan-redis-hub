@@ -114,7 +114,7 @@ async def test_background_universe_poller_delays():
         except asyncio.CancelledError:
             pass
 
-    assert sleep_calls == [2.0, 2.0, 2.0, 2.0, 10.0]
+    assert sleep_calls == [2.5, 2.5, 2.5, 2.5, 10.0]
     assert mock_expiry.call_count == 4
     assert mock_oc.call_count == 4
 

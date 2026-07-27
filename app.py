@@ -51,7 +51,7 @@ async def background_universe_poller():
                     await fetch_and_cache_option_chain(
                         redis_client, symbol, underlying_id, segment, nearest_expiry
                     )
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(2.5)
 
             await asyncio.sleep(10.0)  # Polling loop interval
         except asyncio.CancelledError:
