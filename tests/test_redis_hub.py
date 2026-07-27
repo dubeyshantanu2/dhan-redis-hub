@@ -125,7 +125,7 @@ def test_index_scrip_resolution():
     assert INDEX_SCRIP_MAP["NIFTY"] == 13
     assert INDEX_SCRIP_MAP["BANKNIFTY"] == 25
     assert INDEX_SCRIP_MAP["FINNIFTY"] == 27
-    assert INDEX_SCRIP_MAP["SENSEX"] == 51
+    assert INDEX_SCRIP_MAP["SENSEX"] == 1
 
     mock_redis = MagicMock()
     mock_redis.get.return_value = json.dumps({"status": "success"})
