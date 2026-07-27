@@ -38,14 +38,14 @@ class Config(BaseModel):
         {"symbol": "NIFTY", "underlying_id": 13, "segment": "IDX_I"},
         {"symbol": "BANKNIFTY", "underlying_id": 25, "segment": "IDX_I"},
         {"symbol": "FINNIFTY", "underlying_id": 27, "segment": "IDX_I"},
-        {"symbol": "SENSEX", "underlying_id": 12, "segment": "BSE_FNO"},
+        {"symbol": "SENSEX", "underlying_id": 51, "segment": "BSE_FNO"},
     ]
 
 INDEX_SCRIP_MAP: dict[str, int] = {
     "NIFTY": 13,
     "BANKNIFTY": 25,
     "FINNIFTY": 27,
-    "SENSEX": 12,
+    "SENSEX": 51,
 }
 
 settings = Config()
