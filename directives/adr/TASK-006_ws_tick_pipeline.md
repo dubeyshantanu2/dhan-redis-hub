@@ -101,18 +101,24 @@ Contract roll: fetch_and_cache_scrip_master() ──► resolve_futures_security
 - Outside 09:15–15:30 IST the feed is legitimately silent; silence must not trigger reconnect storms or error alerts.
 
 ## Definition of Done
-- [ ] `ws_feed.py` rewritten on `MarketFeed`; no `struct` or raw `websockets` use remains
-- [ ] Futures leg auto-resolves; no hardcoded contract ID
-- [ ] Published futures packet carries LTP, volume, total_buy/sell_quantity, high, low, 5-level depth
-- [ ] `dhan:quote:<id>` untouched by the WS path; `/quote` schema unchanged
-- [ ] `app.py` and `client.py` unmodified
-- [ ] Tests pass, no regression in `tests/test_redis_hub.py` / `tests/test_alerts.py`
-- [ ] Live verification during market hours: a real tick observed on `dhan:ticks:13`
+**Status: IMPLEMENTED 2026-07-28.** All items verified — see `reports/debug/TASK-006_debug-report.md` and `reports/qa/TASK-006_qa-report.md`.
+
+- [x] `ws_feed.py` rewritten on `MarketFeed`; no `struct` or raw `websockets` use remains
+- [x] Futures leg auto-resolves; no hardcoded contract ID — resolved `61093` live
+- [x] Published futures packet carries LTP, volume, total_buy/sell_quantity, high, low, 5-level depth
+- [x] `dhan:quote:<id>` untouched by the WS path; `/quote` schema unchanged — `--scan 'dhan:quote:*'` returned 0
+- [x] `app.py` and `client.py` unmodified
+- [x] Tests pass, no regression in `tests/test_redis_hub.py` / `tests/test_alerts.py` — 25/25
+- [x] Live verification during market hours: 196 ticks in 20s across 5 instruments
+
+### Added during review (2026-07-28)
+- [x] Scrip-master cache key versioned to `dhan:scrip_master:v2` — a legacy payload without `expiry` would otherwise have dropped the futures leg for up to 24h after deploy
+- [x] Expiry compared as a full instant, not a date — the roll now happens at the contract's expiry time rather than at the following midnight
 
 ## Known Risks & Mitigation
 | Risk | Mitigation |
 |---|---|
-| SDK bug or breaking change in `dhanhq` | Pin `>=2.0.0`; AEOLUS runs the same SDK, so defects surface in two places and are diagnosable |
+| SDK bug or breaking change in `dhanhq` | Constrained to `>=2.0.0,<3.0.0` — an upper bound, not a pin, so patch/minor fixes flow in but a major rewrite of `MarketFeed` cannot land unreviewed. Tested against **2.2.0**. AEOLUS runs the same SDK, so defects surface in two places and are diagnosable |
 | Scrip master unavailable at startup | `resolve_futures_security_id()` returns `None`; index legs still subscribe — degraded, not dead |
 | Reconnect storm outside market hours | Exponential backoff to 60s; silence is not treated as an error |
 | Token expiry mid-session | Credentials re-read from Redis on every reconnect attempt |

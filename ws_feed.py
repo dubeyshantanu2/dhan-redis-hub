@@ -26,6 +26,20 @@ from poller import fetch_and_cache_scrip_master
 logger = logging.getLogger("dhan-redis-hub.ws_feed")
 
 
+def _expiry_instant(raw: str) -> str:
+    """Normalise SEM_EXPIRY_DATE to a lexicographically comparable instant.
+
+    The CSV gives futures rows a full 'YYYY-MM-DD HH:MM:SS' timestamp, so a
+    contract must stop being eligible once that instant passes -- not merely
+    once the date rolls over. Date-only values are treated as end-of-day so
+    they stay eligible through their expiry date rather than dying at midnight.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    return f"{raw} 23:59:59" if len(raw) == 10 else raw
+
+
 async def resolve_futures_security_id(redis_client: Redis, symbol: str) -> str | None:
     """Nearest non-expired futures contract ID for `symbol`, from the cached scrip master.
 
@@ -40,13 +54,18 @@ async def resolve_futures_security_id(redis_client: Redis, symbol: str) -> str |
         return None
 
     pattern = re.compile(rf"^{re.escape(symbol.upper())} [A-Z]{{3}} FUT$")
-    today = time.strftime("%Y-%m-%d")
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
 
-    candidates = [
-        (info["expiry"], info["security_id"])
-        for name, info in scrip_map.items()
-        if pattern.match(name) and info.get("expiry", "") >= today
-    ]
+    candidates = []
+    for name, info in scrip_map.items():
+        if not pattern.match(name):
+            continue
+        # An empty expiry (legacy cache row) sorts below `now` and is skipped,
+        # so a stale payload degrades to "no futures leg" rather than picking
+        # an arbitrary contract.
+        expiry = _expiry_instant(info.get("expiry", ""))
+        if expiry >= now:
+            candidates.append((expiry, info["security_id"]))
     if not candidates:
         logger.warning("No non-expired futures contract found for %s.", symbol)
         return None
@@ -125,7 +144,11 @@ class DhanWebSocketHub:
             if not self.running:
                 break
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, settings.ws_max_backoff_secs)
+            # Clamp against the initial value: a misconfigured max below the
+            # initial delay would otherwise pin every retry at the smaller
+            # number and hammer Dhan on a sustained outage.
+            ceiling = max(settings.ws_max_backoff_secs, settings.ws_initial_backoff_secs)
+            backoff = min(backoff * 2, ceiling)
 
     async def _get_auth(self) -> dict | None:
         auth_str = self.redis_client.get("dhan:auth")

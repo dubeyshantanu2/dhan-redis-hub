@@ -20,9 +20,10 @@ All notable changes to `dhan-redis-hub`.
 - `resolve_futures_security_id()` — resolves the current-month futures contract from the already-cached scrip master, so the monthly roll needs no config edit. Matches `'<SYMBOL> <MON> FUT'` exactly, so NIFTY never resolves to NIFTYNXT50.
 - `dhan:tick:<security_id>` — short-lived (60s) last-tick snapshot so a subscriber connecting between ticks has a starting value.
 - WS config in `config.py`: `ws_index_instruments`, `ws_futures_symbols` (env `WS_FUTURES_SYMBOLS`), `ttl_tick_snapshot`, and the three `ws_*_backoff_*` settings.
-- `expiry` carried through `fetch_and_cache_scrip_master()`'s parsed map (additive; existing keys unchanged).
-- `dhanhq>=2.0.0` in `requirements.txt`.
-- `tests/test_ws_feed.py` — 8 tests (21/21 suite passing, 77% on `ws_feed.py`, 82% across changed files).
+- `expiry` carried through `fetch_and_cache_scrip_master()`'s parsed map (additive; existing keys unchanged). Cache key versioned to `dhan:scrip_master:v2` so a payload written before `expiry` existed cannot be served — otherwise the 24h TTL would have silently dropped the futures leg for a full day after deploy.
+- Expiry compared as a full `YYYY-MM-DD HH:MM:SS` instant rather than a date, so the contract roll happens at the actual expiry time instead of the following midnight. Date-only values are treated as end-of-day.
+- `dhanhq>=2.0.0,<3.0.0` in `requirements.txt` (tested against 2.2.0).
+- `tests/test_ws_feed.py` — 13 tests (25/25 suite passing).
 
 ### Fixed — regression guard
 - The WS path no longer writes to `dhan:quote:<id>`. That key belongs to `poller.fetch_and_cache_quote()` and carries Dhan **REST** field names (`last_price`, `buy_quantity`, `ohlc.high`, `depth.buy`); WS packets use different names (`LTP`, `total_buy_quantity`, `high`, `depth[].bid_price`). Sharing it would have made `/quote` return two schemas at random.

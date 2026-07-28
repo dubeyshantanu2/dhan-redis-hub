@@ -10,19 +10,19 @@ from ws_feed import DhanWebSocketHub, resolve_futures_security_id
 # NIFTYNXT50 rows are present on purpose -- they are the prefix collision the
 # resolver has to reject.
 FAKE_SCRIP_MAP = {
-    "NIFTY JUL FUT": {"security_id": "61093", "expiry": "2026-07-28"},
-    "NIFTY AUG FUT": {"security_id": "58072", "expiry": "2026-08-25"},
-    "NIFTY SEP FUT": {"security_id": "68407", "expiry": "2026-09-29"},
-    "NIFTYNXT50 JUL FUT": {"security_id": "61094", "expiry": "2026-07-28"},
-    "NIFTYNXT50 AUG FUT": {"security_id": "58073", "expiry": "2026-08-25"},
-    "NIFTY 24000 CALL": {"security_id": "63929", "expiry": "2026-07-28"},
+    "NIFTY JUL FUT": {"security_id": "61093", "expiry": "2026-07-28 14:30:00"},
+    "NIFTY AUG FUT": {"security_id": "58072", "expiry": "2026-08-25 14:30:00"},
+    "NIFTY SEP FUT": {"security_id": "68407", "expiry": "2026-09-29 14:30:00"},
+    "NIFTYNXT50 JUL FUT": {"security_id": "61094", "expiry": "2026-07-28 14:30:00"},
+    "NIFTYNXT50 AUG FUT": {"security_id": "58073", "expiry": "2026-08-25 14:30:00"},
+    "NIFTY 24000 CALL": {"security_id": "63929", "expiry": "2026-07-28 14:30:00"},
 }
 
 
 @pytest.mark.asyncio
 async def test_resolve_futures_picks_nearest_unexpired():
     with patch("ws_feed.fetch_and_cache_scrip_master", AsyncMock(return_value=FAKE_SCRIP_MAP)), \
-         patch("ws_feed.time.strftime", return_value="2026-07-28"):
+         patch("ws_feed.time.strftime", return_value="2026-07-28 10:36:00"):
         result = await resolve_futures_security_id(MagicMock(), "NIFTY")
 
     assert result == "61093", "Should pick the JUL contract, expiring today but not yet expired"
@@ -32,10 +32,56 @@ async def test_resolve_futures_picks_nearest_unexpired():
 async def test_resolve_futures_rolls_past_expired_contract():
     """After JUL expires, the resolver must roll to AUG with no config edit."""
     with patch("ws_feed.fetch_and_cache_scrip_master", AsyncMock(return_value=FAKE_SCRIP_MAP)), \
-         patch("ws_feed.time.strftime", return_value="2026-07-29"):
+         patch("ws_feed.time.strftime", return_value="2026-07-29 09:15:00"):
         result = await resolve_futures_security_id(MagicMock(), "NIFTY")
 
     assert result == "58072"
+
+
+@pytest.mark.asyncio
+async def test_resolve_futures_rolls_at_intraday_expiry_instant():
+    """The roll must happen at the contract's expiry time, not at midnight.
+
+    Between 14:30 and market close on expiry day the JUL contract is dead;
+    a date-only comparison would keep subscribing it for another 9 hours.
+    """
+    with patch("ws_feed.fetch_and_cache_scrip_master", AsyncMock(return_value=FAKE_SCRIP_MAP)), \
+         patch("ws_feed.time.strftime", return_value="2026-07-28 14:29:59"):
+        before = await resolve_futures_security_id(MagicMock(), "NIFTY")
+
+    with patch("ws_feed.fetch_and_cache_scrip_master", AsyncMock(return_value=FAKE_SCRIP_MAP)), \
+         patch("ws_feed.time.strftime", return_value="2026-07-28 14:30:01"):
+        after = await resolve_futures_security_id(MagicMock(), "NIFTY")
+
+    assert before == "61093", "still live one second before expiry"
+    assert after == "58072", "must roll to AUG one second after expiry"
+
+
+@pytest.mark.asyncio
+async def test_resolve_futures_skips_legacy_cache_rows_without_expiry():
+    """A scrip-master payload cached before 'expiry' existed must not resolve.
+
+    The versioned cache key in poller.py should prevent this reaching us, but a
+    stale row must degrade to 'no futures leg' rather than silently picking an
+    arbitrary contract.
+    """
+    legacy = {"NIFTY JUL FUT": {"security_id": "61093"}}
+    with patch("ws_feed.fetch_and_cache_scrip_master", AsyncMock(return_value=legacy)), \
+         patch("ws_feed.time.strftime", return_value="2026-07-28 10:36:00"):
+        result = await resolve_futures_security_id(MagicMock(), "NIFTY")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_futures_accepts_date_only_expiry_through_end_of_day():
+    """Date-only expiry values must stay eligible until midnight, not die at 00:00."""
+    date_only = {"NIFTY JUL FUT": {"security_id": "61093", "expiry": "2026-07-28"}}
+    with patch("ws_feed.fetch_and_cache_scrip_master", AsyncMock(return_value=date_only)), \
+         patch("ws_feed.time.strftime", return_value="2026-07-28 15:30:00"):
+        result = await resolve_futures_security_id(MagicMock(), "NIFTY")
+
+    assert result == "61093"
 
 
 @pytest.mark.asyncio
@@ -43,7 +89,7 @@ async def test_resolve_futures_ignores_prefix_collision_and_options():
     """'NIFTY' must never resolve to a NIFTYNXT50 contract or an option row."""
     nxt50_ids = {"61094", "58073"}
     with patch("ws_feed.fetch_and_cache_scrip_master", AsyncMock(return_value=FAKE_SCRIP_MAP)), \
-         patch("ws_feed.time.strftime", return_value="2026-07-28"):
+         patch("ws_feed.time.strftime", return_value="2026-07-28 10:36:00"):
         result = await resolve_futures_security_id(MagicMock(), "NIFTY")
 
     assert result not in nxt50_ids
@@ -174,3 +220,31 @@ async def test_build_instruments_degrades_without_futures():
 
     assert len(instruments) == 4
     assert all(seg == MarketFeed.IDX for seg, _, _ in instruments)
+
+
+@pytest.mark.asyncio
+async def test_scrip_master_cache_key_is_versioned():
+    """A legacy 'dhan:scrip_master' payload must not be served to the resolver.
+
+    The pre-TASK-006 cache has no 'expiry' field and lives for 24h. Reading it
+    would drop the futures leg for a whole day after deploy, silently. The
+    versioned key sidesteps it entirely.
+    """
+    from poller import fetch_and_cache_scrip_master
+
+    mock_redis = MagicMock()
+    # Legacy key is populated; versioned key is not.
+    mock_redis.get.side_effect = lambda key: (
+        json.dumps({"NIFTY JUL FUT": {"security_id": "61093"}})
+        if key == "dhan:scrip_master" else None
+    )
+
+    with patch("poller.httpx.AsyncClient") as mock_http:
+        mock_http.return_value.__aenter__.return_value.get = AsyncMock(
+            side_effect=RuntimeError("network disabled in test")
+        )
+        result = await fetch_and_cache_scrip_master(mock_redis)
+
+    # Legacy payload must not be returned; a re-download is attempted instead.
+    assert result is None
+    assert mock_redis.get.call_args[0][0] == "dhan:scrip_master:v2"

@@ -12,7 +12,7 @@ Full local stack, live market hours (NIFTY spot ~23,998):
 
 ### 1. Startup & credential sync
 ```
-auth_sync: Successfully synced Dhan credentials for client ID: 1101257982 into Redis.
+auth_sync: Successfully synced Dhan credentials for client ID: 11******82 into Redis.
 GET / → {"status":"online","redis_connected":true,"auth_synced":true}
 ```
 
