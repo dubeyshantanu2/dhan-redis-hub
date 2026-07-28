@@ -32,7 +32,31 @@ class Config(BaseModel):
     ttl_candles_intraday: int = int(os.getenv("TTL_CANDLES_INTRADAY", "900"))  # 15 mins
     ttl_candles_daily: int = int(os.getenv("TTL_CANDLES_DAILY", "86400"))  # 24 hours
     ttl_scrip_master: int = int(os.getenv("TTL_SCRIP_MASTER", "86400"))  # 24 hours
-    
+    # Last-tick snapshot written by the WS hub. Deliberately NOT 'dhan:quote:<id>' --
+    # that key belongs to the REST poller and carries Dhan REST field names.
+    ttl_tick_snapshot: int = int(os.getenv("TTL_TICK_SNAPSHOT", "60"))
+
+    # WebSocket feed reconnect backoff
+    ws_initial_backoff_secs: float = float(os.getenv("WS_INITIAL_BACKOFF_SECS", "1.0"))
+    ws_max_backoff_secs: float = float(os.getenv("WS_MAX_BACKOFF_SECS", "60.0"))
+    ws_backoff_reset_after_secs: float = float(os.getenv("WS_BACKOFF_RESET_AFTER_SECS", "60.0"))
+
+    # WebSocket subscription universe.
+    # Indices at Ticker (LTP only -- indices have no depth or volume).
+    ws_index_instruments: list[dict] = [
+        {"symbol": "NIFTY", "security_id": "13"},
+        {"symbol": "INDIAVIX", "security_id": "21"},
+        {"symbol": "BANKNIFTY", "security_id": "25"},
+        {"symbol": "FINNIFTY", "security_id": "27"},
+    ]
+    # Futures legs subscribed at Full -- the only v2 mode carrying 5-level depth
+    # alongside LTP/volume/OI. Contract IDs resolve from the scrip master at
+    # connect time, so the monthly roll needs no edit here.
+    ws_futures_symbols: list[str] = (
+        os.getenv("WS_FUTURES_SYMBOLS", "NIFTY").split(",")
+    )
+
+
     # Default Polling Universe
     default_indices: list[dict] = [
         {"symbol": "NIFTY", "underlying_id": 13, "segment": "IDX_I"},

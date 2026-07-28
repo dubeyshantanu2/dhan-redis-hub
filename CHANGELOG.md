@@ -2,6 +2,38 @@
 
 All notable changes to `dhan-redis-hub`.
 
+## [1.5.0] - 2026-07-28
+
+### Fixed
+- **WebSocket Tick Pipeline Repaired (TASK-006)** — `dhan:ticks:<security_id>` was publishing **zero ticks, permanently**. Three independent defects in the hand-rolled `ws_feed.py`, each alone sufficient:
+  - Never sent a v2 subscribe frame after connecting (`_subscribed_instruments` was assigned once and never used), so Dhan sent nothing.
+  - Could not decode the binary market-data protocol — non-text frames were reduced to `{"raw": hex}`, making the `security_id`/`LTP` lookup permanently `False` and the Redis write + publish unreachable.
+  - Extracted LTP only; no depth, volume, or buy/sell quantities.
+  - **Impact:** `client.subscribe_ticks()` blocked forever in every consuming project. AEOLUS opened its own direct Dhan WebSocket to get depth/volume, violating the hub's founding constraint that only `dhan-redis-hub` talks to `api.dhan.co`.
+
+### Changed
+- **`ws_feed.py` rewritten on `dhanhq.MarketFeed`** — the vendor SDK owns the binary wire format (subscribe frames, `struct` unpacking, disconnect codes) instead of ~200 lines of hand-rolled parsing. Public surface (`__init__`, `start()`, `stop()`) unchanged, so `app.py` and `client.py` needed no edits.
+- Indices subscribe at `Ticker`; futures legs at `Full` — the only v2 mode bundling 5-level depth with LTP, volume, and OI in one packet.
+- Reconnect uses exponential backoff (1s → 60s, reset after a sustained connection) and **re-reads credentials from Redis on every attempt**, so daily Dhan token expiry heals automatically.
+
+### Added
+- `resolve_futures_security_id()` — resolves the current-month futures contract from the already-cached scrip master, so the monthly roll needs no config edit. Matches `'<SYMBOL> <MON> FUT'` exactly, so NIFTY never resolves to NIFTYNXT50.
+- `dhan:tick:<security_id>` — short-lived (60s) last-tick snapshot so a subscriber connecting between ticks has a starting value.
+- WS config in `config.py`: `ws_index_instruments`, `ws_futures_symbols` (env `WS_FUTURES_SYMBOLS`), `ttl_tick_snapshot`, and the three `ws_*_backoff_*` settings.
+- `expiry` carried through `fetch_and_cache_scrip_master()`'s parsed map (additive; existing keys unchanged). Cache key versioned to `dhan:scrip_master:v2` so a payload written before `expiry` existed cannot be served — otherwise the 24h TTL would have silently dropped the futures leg for a full day after deploy.
+- Expiry compared as a full `YYYY-MM-DD HH:MM:SS` instant rather than a date, so the contract roll happens at the actual expiry time instead of the following midnight. Date-only values are treated as end-of-day.
+- `dhanhq>=2.0.0,<3.0.0` in `requirements.txt` (tested against 2.2.0).
+- `tests/test_ws_feed.py` — 13 tests (25/25 suite passing).
+
+### Fixed — regression guard
+- The WS path no longer writes to `dhan:quote:<id>`. That key belongs to `poller.fetch_and_cache_quote()` and carries Dhan **REST** field names (`last_price`, `buy_quantity`, `ohlc.high`, `depth.buy`); WS packets use different names (`LTP`, `total_buy_quantity`, `high`, `depth[].bid_price`). Sharing it would have made `/quote` return two schemas at random.
+
+### Verified
+Live, during market hours (NIFTY spot ~23,998), full local stack against real Dhan: **196 ticks in 20s across 5 instruments (~10/s)**, futures `Full` packet carrying all 5 depth levels plus `volume`, `total_buy_quantity`, `total_sell_quantity`, `high`, `low`. `/expirylist`, `/optionchain`, `/quote` regression-checked with unchanged response shapes. See `reports/debug/TASK-006_debug-report.md`.
+
+### Known Issue (not fixed — outside TASK-006 scope)
+- `python-dotenv` is declared in `requirements.txt` but `load_dotenv()` is never called anywhere. The README's documented local-run flow (`cp .env.example .env` → `uvicorn app:app`) silently ignores `.env`. Deployed environments are unaffected (Fly secrets / docker-compose inject real env vars).
+
 ## [1.4.0] - 2026-07-27
 
 ### Fixed

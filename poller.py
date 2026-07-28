@@ -25,7 +25,11 @@ async def fetch_and_cache_scrip_master(redis_client: Redis) -> dict | None:
     parses security ID mappings, and caches under 'dhan:scrip_master' for 24 hours.
     """
     url = "https://images.dhan.co/api-data/api-scrip-master.csv"
-    cache_key = "dhan:scrip_master"
+    # Versioned key: a cache written before 'expiry' was added has no expiry field,
+    # and resolve_futures_security_id() would reject every futures row until the
+    # 24h TTL lapsed -- silently dropping the futures leg for a whole day after
+    # deploy. Bump this suffix whenever the parsed row shape changes.
+    cache_key = "dhan:scrip_master:v2"
 
     cached = redis_client.get(cache_key)
     if cached:
@@ -48,7 +52,10 @@ async def fetch_and_cache_scrip_master(redis_client: Redis) -> dict | None:
                         "security_id": security_id,
                         "exchange": row.get("SEM_EXM_EXCH_ID"),
                         "segment": row.get("SEM_SEGMENT"),
-                        "lot_size": row.get("SEM_LOT_UNITS")
+                        "lot_size": row.get("SEM_LOT_UNITS"),
+                        # Needed by ws_feed.resolve_futures_security_id() to pick the
+                        # nearest non-expired futures contract without a second CSV pass.
+                        "expiry": row.get("SEM_EXPIRY_DATE") or ""
                     }
 
             if scrip_map:
