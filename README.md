@@ -41,7 +41,7 @@ Copy `client.py` into your project or import `DhanRedisClient`:
 ```python
 from client import DhanRedisClient
 
-client = DhanRedisClient(redis_host="localhost", redis_port=6379)
+client = DhanRedisClient(redis_host="localhost", redis_port=6379, project_name="Kronos")  # project_name tags hub-side error logs and alerts
 
 # 1. Fetch Option Chain (Sub-millisecond Redis Cache Hit!)
 option_chain = client.get_option_chain(symbol="NIFTY", expiry="2026-07-30")

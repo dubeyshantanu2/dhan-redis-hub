@@ -4,6 +4,7 @@ import httpx
 from redis import Redis
 
 from config import INDEX_SCRIP_MAP
+from log_context import PROJECT_HEADER, default_client_project
 
 logger = logging.getLogger("dhan_redis_client")
 
@@ -19,7 +20,8 @@ class DhanRedisClient:
         redis_port: int = 6379,
         redis_password: str | None = None,
         redis_db: int = 0,
-        hub_url: str = "http://localhost:8000"
+        hub_url: str = "http://localhost:8000",
+        project_name: str | None = None
     ):
         self.redis = Redis(
             host=redis_host,
@@ -29,6 +31,10 @@ class DhanRedisClient:
             decode_responses=True
         )
         self.hub_url = hub_url.rstrip("/")
+        # Identifies the calling project (ARES, Kronos, ...) to the hub so hub-side
+        # logs and Discord alerts name whoever triggered a failure.
+        self.project_name = project_name or default_client_project()
+        self._hub_headers = {PROJECT_HEADER: self.project_name}
 
     def get_auth(self) -> dict | None:
         """Retrieves active Dhan credentials stored in Redis."""
@@ -46,11 +52,11 @@ class DhanRedisClient:
 
         logger.info("Cache MISS for scrip master. Requesting from hub proxy...")
         try:
-            resp = httpx.post(f"{self.hub_url}/scrip-master", timeout=30.0)
+            resp = httpx.post(f"{self.hub_url}/scrip-master", timeout=30.0, headers=self._hub_headers)
             resp.raise_for_status()
             return resp.json()
         except Exception as err:
-            logger.error(f"Failed to fetch scrip master from hub proxy: {err}")
+            logger.error(f"[project={self.project_name}] Failed to fetch scrip master from hub proxy: {err}")
             return None
 
     def get_option_chain(
@@ -83,12 +89,13 @@ class DhanRedisClient:
                     "underlying_seg": underlying_seg,
                     "expiry": expiry
                 },
-                timeout=10.0
+                timeout=10.0,
+                headers=self._hub_headers
             )
             resp.raise_for_status()
             return resp.json()
         except Exception as err:
-            logger.error(f"Failed to fetch option chain from hub proxy: {err}")
+            logger.error(f"[project={self.project_name}] Failed to fetch option chain from hub proxy: {err}")
             return None
 
     def get_expiry_list(
@@ -119,12 +126,13 @@ class DhanRedisClient:
                     "underlying_scrip": underlying_scrip,
                     "underlying_seg": underlying_seg
                 },
-                timeout=10.0
+                timeout=10.0,
+                headers=self._hub_headers
             )
             resp.raise_for_status()
             return resp.json()
         except Exception as err:
-            logger.error(f"Failed to fetch expiry list from hub proxy: {err}")
+            logger.error(f"[project={self.project_name}] Failed to fetch expiry list from hub proxy: {err}")
             return None
 
     def get_quote(self, security_id: int | str, exchange_segment: str = "NSE_EQ") -> dict | None:
@@ -143,12 +151,13 @@ class DhanRedisClient:
             resp = httpx.post(
                 f"{self.hub_url}/quote",
                 json={"security_id": str(security_id), "exchange_segment": exchange_segment},
-                timeout=10.0
+                timeout=10.0,
+                headers=self._hub_headers
             )
             resp.raise_for_status()
             return resp.json()
         except Exception as err:
-            logger.error(f"Failed to fetch quote from hub proxy: {err}")
+            logger.error(f"[project={self.project_name}] Failed to fetch quote from hub proxy: {err}")
             return None
 
     def get_candles(
@@ -182,12 +191,13 @@ class DhanRedisClient:
                     "from_date": from_date,
                     "to_date": to_date
                 },
-                timeout=15.0
+                timeout=15.0,
+                headers=self._hub_headers
             )
             resp.raise_for_status()
             return resp.json()
         except Exception as err:
-            logger.error(f"Failed to fetch candles from hub proxy: {err}")
+            logger.error(f"[project={self.project_name}] Failed to fetch candles from hub proxy: {err}")
             return None
 
     def subscribe_ticks(self, security_id: int | str, callback):
@@ -206,4 +216,4 @@ class DhanRedisClient:
                     payload = json.loads(message["data"])
                     callback(payload)
                 except Exception as err:
-                    logger.error(f"Error executing tick callback: {err}")
+                    logger.error(f"[project={self.project_name}] Error executing tick callback: {err}")

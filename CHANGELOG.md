@@ -2,6 +2,16 @@
 
 All notable changes to `dhan-redis-hub`.
 
+## [1.6.0] - 2026-07-28
+
+### Added
+- **Project attribution in error logging** — every log record and Discord error alert now names the project that triggered the failure (ARES, Aeolus, gamma-blaster, Kronos, stock-screener), instead of only naming the failing hub component.
+  - New `log_context.py`: `X-Project-Name` request header, a `ContextVar` holding the current caller, a `ProjectLogFilter` injecting `%(project)s`, and `configure_logging()`.
+  - Hub log format is now `... [project=<name>] <logger>: <message>`; requests with no header are attributed to `hub-internal`.
+  - `app.py` middleware tags each request and alerts on unhandled endpoint errors with the responsible project.
+  - `send_error_alert(..., project=...)` prints a `Project` line and includes the project in the dedup key, so the same failure from two projects raises two alerts.
+  - `DhanRedisClient(project_name=...)` (defaults to `$PROJECT_NAME`) sends the header on every hub proxy call and prefixes its own error logs with the project.
+
 ## [1.5.0] - 2026-07-28
 
 ### Fixed

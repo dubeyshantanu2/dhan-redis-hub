@@ -4,6 +4,7 @@ import logging
 import httpx
 from datetime import datetime, timezone, timedelta
 from config import settings
+from log_context import DEFAULT_PROJECT
 
 logger = logging.getLogger("dhan-redis-hub.alerts")
 
@@ -51,9 +52,17 @@ async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = T
         except Exception as e:
             logger.error(f"Failed to send Discord startup alert: {e}")
 
-async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldown_secs: float = ERROR_COOLDOWN_SECS) -> None:
+async def send_error_alert(
+    error_msg: str,
+    component: str = "Redis Hub",
+    cooldown_secs: float = ERROR_COOLDOWN_SECS,
+    project: str | None = None,
+) -> None:
     """
     Sends a system alert regarding errors to Discord with built-in per-error cooldown coalescing and state pruning.
+
+    `project` names the caller responsible for the error (e.g. "Kronos"), so the
+    alert says which project triggered it rather than just which component failed.
     """
     webhook_url = settings.discord_health_webhook_url
     if not webhook_url:
@@ -68,7 +77,10 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldow
         _last_error_times.pop(k, None)
 
     # Error deduplication & cooldown check
-    error_key = f"{component}:{error_msg}"
+    project_name = project or DEFAULT_PROJECT
+    # Project is part of the dedup key: the same failure from two projects is
+    # two distinct signals and both deserve an alert.
+    error_key = f"{project_name}:{component}:{error_msg}"
     if error_key in _last_error_times and (now_mono - _last_error_times[error_key]) < cooldown_secs:
         logger.debug(f"Skipping duplicate error alert for '{error_key}' (cooldown active).")
         return
@@ -81,6 +93,7 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldow
     msg = f"""```diff
 - 🚨 DHAN REDIS HUB — SYSTEM ALERT
 - ──────────────────────────────────
+- ❌ Project   : {project_name}
 - ❌ Component : {component}
 - ❌ Error     : {error_msg}
 - 🕒 Time      : {now_ist} IST
@@ -94,7 +107,7 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldow
         try:
             resp = await client.post(webhook_url, json=payload)
             resp.raise_for_status()
-            logger.info(f"Sent error alert to Discord health channel: {error_msg}")
+            logger.info(f"Sent error alert to Discord health channel [project={project_name}]: {error_msg}")
         except Exception as e:
             _last_error_times.pop(error_key, None)  # Reset cooldown state on delivery failure
             logger.error(f"Failed to send Discord error alert: {e}")
