@@ -48,7 +48,10 @@ async def fetch_and_cache_scrip_master(redis_client: Redis) -> dict | None:
                         "security_id": security_id,
                         "exchange": row.get("SEM_EXM_EXCH_ID"),
                         "segment": row.get("SEM_SEGMENT"),
-                        "lot_size": row.get("SEM_LOT_UNITS")
+                        "lot_size": row.get("SEM_LOT_UNITS"),
+                        # Needed by ws_feed.resolve_futures_security_id() to pick the
+                        # nearest non-expired futures contract without a second CSV pass.
+                        "expiry": row.get("SEM_EXPIRY_DATE") or ""
                     }
 
             if scrip_map:
