@@ -146,6 +146,12 @@ stock-screener). Every error must say *which* project caused it.
    background task: the HTTP request path never blocks on Discord, and pending
    alert tasks are held so the event loop cannot garbage-collect them.
 
+The header is untrusted input: `normalize_project()` strips anything outside
+`[A-Za-z0-9._- ]`, collapses whitespace and truncates to 64 characters, so a
+caller cannot inject newlines or backticks that would forge extra lines inside
+the Discord alert code block. Alert cooldowns key on the
+`(project, component, message)` tuple rather than a joined string.
+
 Requests without the header (hub background poller, WS feed, health checks) are
 attributed to `hub-internal`.
 

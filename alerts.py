@@ -5,11 +5,13 @@ import logging
 import httpx
 from datetime import datetime, timezone, timedelta
 from config import settings
-from log_context import get_project
+from log_context import get_project, normalize_project
 
 logger = logging.getLogger("dhan-redis-hub.alerts")
 
-_last_error_times: dict[str, float] = {}
+# Keyed by (project, component, error message). A tuple rather than a joined
+# string so no delimiter collision can make two distinct errors share a cooldown.
+_last_error_times: dict[tuple[str, str, str], float] = {}
 ERROR_COOLDOWN_SECS: float = 60.0
 
 # Strong references to in-flight alert tasks. Without this the event loop may
@@ -99,10 +101,12 @@ async def send_error_alert(
         _last_error_times.pop(k, None)
 
     # Error deduplication & cooldown check
-    project_name = project or get_project()
+    # Explicit arguments are normalized too: this value is interpolated into
+    # Discord markdown and log lines, and not every caller is the middleware.
+    project_name = normalize_project(project) if project else get_project()
     # Project is part of the dedup key: the same failure from two projects is
     # two distinct signals and both deserve an alert.
-    error_key = f"{project_name}:{component}:{error_msg}"
+    error_key = (project_name, component, error_msg)
     if error_key in _last_error_times and (now_mono - _last_error_times[error_key]) < cooldown_secs:
         logger.debug(f"Skipping duplicate error alert for '{error_key}' (cooldown active).")
         return

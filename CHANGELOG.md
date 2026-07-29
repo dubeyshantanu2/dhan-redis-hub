@@ -10,6 +10,8 @@ All notable changes to `dhan-redis-hub`.
   - Hub log format is now `... [project=<name>] <logger>: <message>`; requests with no header are attributed to `hub-internal`.
   - `app.py` middleware tags each request and alerts on unhandled endpoint errors with the responsible project.
   - `send_error_alert(..., project=...)` prints a `Project` line and includes the project in the dedup key, so the same failure from two projects raises two alerts. When `project` is omitted it falls back to the active request context, so existing call sites (e.g. `RateGovernor.handle_429_backoff`) stay attributed.
+  - `normalize_project()` sanitizes the client-supplied header (strips control characters, newlines and backticks, collapses whitespace, truncates to 64 chars) before it reaches log lines or Discord markdown.
+  - Alert cooldown is keyed on the `(project, component, message)` tuple, so no delimiter collision can suppress an unrelated alert.
   - `dispatch_error_alert()` fires alerts as retained background tasks — the request path never waits on Discord, and pending alerts cannot be garbage-collected.
   - `DhanRedisClient(project_name=...)` (defaults to `$PROJECT_NAME`) sends the header on every hub proxy call and prefixes its own error logs with the project.
 
