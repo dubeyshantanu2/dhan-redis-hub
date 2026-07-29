@@ -60,6 +60,24 @@ async def test_error_alert_names_the_project():
 
 
 @pytest.mark.asyncio
+async def test_error_alert_normalizes_explicit_project():
+    """An explicit project= argument is sanitized too, not just the header path."""
+    hostile = "ARES`\n- \u274c Error : fabricated failure"
+    with patch("alerts.settings.discord_health_webhook_url", "https://discord.com/api/webhooks/test"):
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value.raise_for_status = lambda: None
+
+            await send_error_alert("real failure", component="HTTP API", project=hostile)
+
+            content = mock_post.call_args[1]["json"]["content"]
+            assert normalize_project(hostile) in content
+            # The backtick that would close the Discord code block is gone, and the
+            # injected newline did not become a second forged alert line.
+            assert "`" not in content.replace("```diff", "").replace("```", "")
+            assert content.count("❌ Error") == 1
+
+
+@pytest.mark.asyncio
 async def test_same_error_from_two_projects_both_alert():
     """Cooldown dedupes per project, so a shared failure is reported for each caller."""
     with patch("alerts.settings.discord_health_webhook_url", "https://discord.com/api/webhooks/test"):
@@ -181,9 +199,26 @@ def test_normalize_project_truncates_long_names():
 
 
 def test_malicious_header_is_sanitized_end_to_end():
-    """A hostile X-Project-Name never reaches the log/alert formatting raw."""
-    set_project("ARES`\n- ❌ Error : fake")
-    assert get_project() == "ARES- Error fake"
+    """A hostile X-Project-Name is sanitized by the middleware, not just by set_project."""
+    import app as app_module
+
+    # httpx rejects newlines and non-ASCII in headers before they leave the client,
+    # so the realistic hostile payload is Discord markup plus padding.
+    hostile = "ARES```diff - Error : fake" + "X" * 200
+    seen: list[str] = []
+
+    @app_module.app.get("/_hostile_probe")
+    def _hostile_probe():
+        """Records what the middleware attributed after sanitization."""
+        seen.append(get_project())
+        return {"ok": True}
+
+    with TestClient(app_module.app) as client:
+        client.get("/_hostile_probe", headers={PROJECT_HEADER: hostile})
+
+    assert seen == [normalize_project(hostile)]
+    assert "`" not in seen[0]
+    assert len(seen[0]) <= MAX_PROJECT_NAME_LEN
 
 
 @pytest.mark.asyncio
