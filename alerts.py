@@ -1,14 +1,37 @@
+import asyncio
 import os
 import time
 import logging
 import httpx
 from datetime import datetime, timezone, timedelta
 from config import settings
+from log_context import get_project, normalize_project
 
 logger = logging.getLogger("dhan-redis-hub.alerts")
 
-_last_error_times: dict[str, float] = {}
+# Keyed by (project, component, error message). A tuple rather than a joined
+# string so no delimiter collision can make two distinct errors share a cooldown.
+_last_error_times: dict[tuple[str, str, str], float] = {}
 ERROR_COOLDOWN_SECS: float = 60.0
+
+# Strong references to in-flight alert tasks. Without this the event loop may
+# garbage-collect a pending task and silently drop the alert.
+_pending_alert_tasks: set[asyncio.Task] = set()
+
+
+def dispatch_error_alert(error_msg: str, component: str = "Redis Hub", project: str | None = None) -> None:
+    """
+    Fires an error alert in the background without blocking the caller.
+
+    Callers on the request path must not wait on Discord's availability, and the
+    project is captured here (while still in the caller's context) so the
+    detached task attributes the error correctly.
+    """
+    task = asyncio.create_task(
+        send_error_alert(error_msg, component=component, project=project or get_project())
+    )
+    _pending_alert_tasks.add(task)
+    task.add_done_callback(_pending_alert_tasks.discard)
 
 async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = True) -> None:
     """
@@ -51,9 +74,19 @@ async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = T
         except Exception as e:
             logger.error(f"Failed to send Discord startup alert: {e}")
 
-async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldown_secs: float = ERROR_COOLDOWN_SECS) -> None:
+async def send_error_alert(
+    error_msg: str,
+    component: str = "Redis Hub",
+    cooldown_secs: float = ERROR_COOLDOWN_SECS,
+    project: str | None = None,
+) -> None:
     """
     Sends a system alert regarding errors to Discord with built-in per-error cooldown coalescing and state pruning.
+
+    `project` names the caller responsible for the error (e.g. "Kronos"), so the
+    alert says which project triggered it rather than just which component failed.
+    When omitted it defaults to the project of the request context in scope, so
+    call sites that never pass it stay correctly attributed.
     """
     webhook_url = settings.discord_health_webhook_url
     if not webhook_url:
@@ -68,7 +101,12 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldow
         _last_error_times.pop(k, None)
 
     # Error deduplication & cooldown check
-    error_key = f"{component}:{error_msg}"
+    # Explicit arguments are normalized too: this value is interpolated into
+    # Discord markdown and log lines, and not every caller is the middleware.
+    project_name = normalize_project(project) if project else get_project()
+    # Project is part of the dedup key: the same failure from two projects is
+    # two distinct signals and both deserve an alert.
+    error_key = (project_name, component, error_msg)
     if error_key in _last_error_times and (now_mono - _last_error_times[error_key]) < cooldown_secs:
         logger.debug(f"Skipping duplicate error alert for '{error_key}' (cooldown active).")
         return
@@ -81,6 +119,7 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldow
     msg = f"""```diff
 - 🚨 DHAN REDIS HUB — SYSTEM ALERT
 - ──────────────────────────────────
+- ❌ Project   : {project_name}
 - ❌ Component : {component}
 - ❌ Error     : {error_msg}
 - 🕒 Time      : {now_ist} IST
@@ -94,7 +133,7 @@ async def send_error_alert(error_msg: str, component: str = "Redis Hub", cooldow
         try:
             resp = await client.post(webhook_url, json=payload)
             resp.raise_for_status()
-            logger.info(f"Sent error alert to Discord health channel: {error_msg}")
+            logger.info(f"Sent error alert to Discord health channel [project={project_name}]: {error_msg}")
         except Exception as e:
             _last_error_times.pop(error_key, None)  # Reset cooldown state on delivery failure
             logger.error(f"Failed to send Discord error alert: {e}")

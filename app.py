@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 from redis import Redis
 
@@ -16,9 +16,10 @@ from poller import (
 )
 from ws_feed import DhanWebSocketHub
 
-from alerts import send_startup_alert, send_error_alert, send_shutdown_alert
+from alerts import send_startup_alert, dispatch_error_alert, send_shutdown_alert
+from log_context import PROJECT_HEADER, configure_logging, set_project
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+configure_logging(logging.INFO)
 logger = logging.getLogger("dhan-redis-hub.app")
 
 redis_client = Redis(
@@ -59,7 +60,7 @@ async def background_universe_poller():
             break
         except Exception as e:
             logger.error(f"Error in background universe poller: {e}")
-            asyncio.create_task(send_error_alert(f"Background universe poller error: {e}", component="Poller Loop"))
+            dispatch_error_alert(f"Background universe poller error: {e}", component="Poller Loop")
             await asyncio.sleep(5.0)
 
 @asynccontextmanager
@@ -74,7 +75,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         redis_ok = False
         logger.error(f"Redis Ping Failed: {e}")
-        asyncio.create_task(send_error_alert(f"Redis connection failed: {e}", component="Redis Cache"))
+        dispatch_error_alert(f"Redis connection failed: {e}", component="Redis Cache")
 
     asyncio.create_task(send_startup_alert(redis_connected=redis_ok, auth_synced=bool(auth_data)))
 
@@ -99,6 +100,26 @@ app = FastAPI(
 )
 
 from config import settings, INDEX_SCRIP_MAP
+
+
+@app.middleware("http")
+async def project_attribution_middleware(request: Request, call_next):
+    """
+    Tags the request context with the calling project so every log record and
+    error alert produced while handling it names the project responsible.
+    """
+    set_project(request.headers.get(PROJECT_HEADER))
+    try:
+        return await call_next(request)
+    except Exception as e:
+        logger.error(f"Unhandled error on {request.method} {request.url.path}: {e}")
+        dispatch_error_alert(
+            f"Unhandled error on {request.method} {request.url.path}: {e}",
+            component="HTTP API",
+        )
+        raise
+
+
 
 class OptionChainReq(BaseModel):
     symbol: str

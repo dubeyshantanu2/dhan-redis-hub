@@ -121,3 +121,42 @@ $$\text{Backoff Time} = \text{base\_backoff} \times 2^{(\text{attempt} - 1)}$$
 2. **Cloud Deployment (Fly.io / VPS)**:
    - Deploy `dhan-redis-hub` to Fly.io (`bom` region, Mumbai) or Render/Railway/VPS.
    - Connect to Upstash Redis or standalone Redis container.
+
+## 6. Project Attribution in Logs & Alerts
+
+The hub is shared by several projects (ARES, Aeolus, gamma-blaster, Kronos,
+stock-screener). Every error must say *which* project caused it.
+
+**Mechanism (`log_context.py`)**
+
+1. `DhanRedisClient` sends an `X-Project-Name` header on every hub proxy call.
+   The name comes from `DhanRedisClient(project_name=...)`, falling back to the
+   `PROJECT_NAME` environment variable, then to `unknown-project`.
+2. An `app.py` HTTP middleware stores that header in a `ContextVar` for the
+   duration of the request.
+3. `ProjectLogFilter` injects the value into every log record, so the hub log
+   format is:
+   `2026-07-28 10:00:00 [ERROR] [project=Kronos] dhan-redis-hub.app: ...`
+4. `send_error_alert(..., project=...)` prints a `Project` line in the Discord
+   alert and includes the project in the cooldown dedup key — the same failure
+   from two projects raises two alerts rather than being coalesced into one.
+   Omitting `project` falls back to the active request context, so call sites
+   that were never updated (rate governor 429 backoff, etc.) stay attributed.
+5. Alerts are dispatched via `dispatch_error_alert()`, which fires a retained
+   background task: the HTTP request path never blocks on Discord, and pending
+   alert tasks are held so the event loop cannot garbage-collect them.
+
+The header is untrusted input: `normalize_project()` strips anything outside
+`[A-Za-z0-9._- ]`, collapses whitespace and truncates to 64 characters, so a
+caller cannot inject newlines or backticks that would forge extra lines inside
+the Discord alert code block. Alert cooldowns key on the
+`(project, component, message)` tuple rather than a joined string.
+
+Requests without the header (hub background poller, WS feed, health checks) are
+attributed to `hub-internal`.
+
+**Client usage**
+
+```python
+client = DhanRedisClient(redis_host="localhost", project_name="Kronos")
+```
