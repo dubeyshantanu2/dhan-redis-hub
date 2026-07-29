@@ -16,8 +16,8 @@ from poller import (
 )
 from ws_feed import DhanWebSocketHub
 
-from alerts import send_startup_alert, send_error_alert, send_shutdown_alert
-from log_context import PROJECT_HEADER, configure_logging, get_project, set_project
+from alerts import send_startup_alert, dispatch_error_alert, send_shutdown_alert
+from log_context import PROJECT_HEADER, configure_logging, set_project
 
 configure_logging(logging.INFO)
 logger = logging.getLogger("dhan-redis-hub.app")
@@ -60,11 +60,7 @@ async def background_universe_poller():
             break
         except Exception as e:
             logger.error(f"Error in background universe poller: {e}")
-            asyncio.create_task(send_error_alert(
-                f"Background universe poller error: {e}",
-                component="Poller Loop",
-                project=get_project(),
-            ))
+            dispatch_error_alert(f"Background universe poller error: {e}", component="Poller Loop")
             await asyncio.sleep(5.0)
 
 @asynccontextmanager
@@ -79,11 +75,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         redis_ok = False
         logger.error(f"Redis Ping Failed: {e}")
-        asyncio.create_task(send_error_alert(
-            f"Redis connection failed: {e}",
-            component="Redis Cache",
-            project=get_project(),
-        ))
+        dispatch_error_alert(f"Redis connection failed: {e}", component="Redis Cache")
 
     asyncio.create_task(send_startup_alert(redis_connected=redis_ok, auth_synced=bool(auth_data)))
 
@@ -121,10 +113,9 @@ async def project_attribution_middleware(request: Request, call_next):
         return await call_next(request)
     except Exception as e:
         logger.error(f"Unhandled error on {request.method} {request.url.path}: {e}")
-        await send_error_alert(
+        dispatch_error_alert(
             f"Unhandled error on {request.method} {request.url.path}: {e}",
             component="HTTP API",
-            project=get_project(),
         )
         raise
 

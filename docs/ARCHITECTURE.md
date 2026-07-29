@@ -140,6 +140,11 @@ stock-screener). Every error must say *which* project caused it.
 4. `send_error_alert(..., project=...)` prints a `Project` line in the Discord
    alert and includes the project in the cooldown dedup key — the same failure
    from two projects raises two alerts rather than being coalesced into one.
+   Omitting `project` falls back to the active request context, so call sites
+   that were never updated (rate governor 429 backoff, etc.) stay attributed.
+5. Alerts are dispatched via `dispatch_error_alert()`, which fires a retained
+   background task: the HTTP request path never blocks on Discord, and pending
+   alert tasks are held so the event loop cannot garbage-collect them.
 
 Requests without the header (hub background poller, WS feed, health checks) are
 attributed to `hub-internal`.

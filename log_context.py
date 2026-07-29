@@ -35,7 +35,9 @@ def default_client_project() -> str:
     Project name a client library reports when the caller did not pass one.
     Reads PROJECT_NAME from the environment so deployments can set it once.
     """
-    return os.getenv("PROJECT_NAME", "unknown-project")
+    # Treat a blank/whitespace-only env value as unset so the client never sends
+    # an empty header (which the hub would attribute to hub-internal instead).
+    return os.getenv("PROJECT_NAME", "").strip() or "unknown-project"
 
 
 class ProjectLogFilter(logging.Filter):
@@ -54,10 +56,14 @@ def configure_logging(level: int = logging.INFO) -> None:
     Configures root logging with the project field in the format string and
     attaches the project filter to every handler.
     """
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] [project=%(project)s] %(name)s: %(message)s",
-    )
+    fmt = "%(asctime)s [%(levelname)s] [project=%(project)s] %(name)s: %(message)s"
+    # force=True: basicConfig is a no-op when the root logger already has handlers
+    # (e.g. uvicorn configured them first), which would leave those handlers on a
+    # formatter with no %(project)s field.
+    logging.basicConfig(level=level, format=fmt, force=True)
+
+    formatter = logging.Formatter(fmt)
     project_filter = ProjectLogFilter()
     for handler in logging.getLogger().handlers:
+        handler.setFormatter(formatter)
         handler.addFilter(project_filter)

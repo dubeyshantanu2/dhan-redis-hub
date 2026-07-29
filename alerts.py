@@ -1,15 +1,35 @@
+import asyncio
 import os
 import time
 import logging
 import httpx
 from datetime import datetime, timezone, timedelta
 from config import settings
-from log_context import DEFAULT_PROJECT
+from log_context import get_project
 
 logger = logging.getLogger("dhan-redis-hub.alerts")
 
 _last_error_times: dict[str, float] = {}
 ERROR_COOLDOWN_SECS: float = 60.0
+
+# Strong references to in-flight alert tasks. Without this the event loop may
+# garbage-collect a pending task and silently drop the alert.
+_pending_alert_tasks: set[asyncio.Task] = set()
+
+
+def dispatch_error_alert(error_msg: str, component: str = "Redis Hub", project: str | None = None) -> None:
+    """
+    Fires an error alert in the background without blocking the caller.
+
+    Callers on the request path must not wait on Discord's availability, and the
+    project is captured here (while still in the caller's context) so the
+    detached task attributes the error correctly.
+    """
+    task = asyncio.create_task(
+        send_error_alert(error_msg, component=component, project=project or get_project())
+    )
+    _pending_alert_tasks.add(task)
+    task.add_done_callback(_pending_alert_tasks.discard)
 
 async def send_startup_alert(redis_connected: bool = True, auth_synced: bool = True) -> None:
     """
@@ -63,6 +83,8 @@ async def send_error_alert(
 
     `project` names the caller responsible for the error (e.g. "Kronos"), so the
     alert says which project triggered it rather than just which component failed.
+    When omitted it defaults to the project of the request context in scope, so
+    call sites that never pass it stay correctly attributed.
     """
     webhook_url = settings.discord_health_webhook_url
     if not webhook_url:
@@ -77,7 +99,7 @@ async def send_error_alert(
         _last_error_times.pop(k, None)
 
     # Error deduplication & cooldown check
-    project_name = project or DEFAULT_PROJECT
+    project_name = project or get_project()
     # Project is part of the dedup key: the same failure from two projects is
     # two distinct signals and both deserve an alert.
     error_key = f"{project_name}:{component}:{error_msg}"

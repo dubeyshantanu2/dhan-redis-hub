@@ -48,8 +48,13 @@ class RateGovernor:
         backoff = base_backoff_secs * (2 ** (retry_count - 1))
         logger.warning(f"RateGovernor: Received 429 Rate Limit from Dhan API. Backing off for {backoff:.2f}s...")
         try:
-            from alerts import send_error_alert
-            asyncio.create_task(send_error_alert(f"Dhan API HTTP 429 Rate Limit hit. Backing off for {backoff:.2f}s", component="Rate Governor"))
+            from alerts import dispatch_error_alert
+            # Project defaults to the request context that triggered the call, so
+            # a 429 caused by one project is not attributed to the hub itself.
+            dispatch_error_alert(
+                f"Dhan API HTTP 429 Rate Limit hit. Backing off for {backoff:.2f}s",
+                component="Rate Governor",
+            )
         except Exception:
             pass
         await asyncio.sleep(backoff)
