@@ -14,6 +14,7 @@ from poller import (
     fetch_and_cache_batch_quotes,
     fetch_and_cache_candles,
     fetch_and_cache_scrip_master,
+    http_client,
 )
 from ws_feed import DhanWebSocketHub
 
@@ -92,6 +93,11 @@ async def lifespan(app: FastAPI):
     ws_hub.stop()
     poller_task.cancel()
     ws_task.cancel()
+    try:
+        await asyncio.gather(poller_task, ws_task, return_exceptions=True)
+    except Exception:
+        pass
+    await http_client.aclose()
 
 app = FastAPI(
     title="Dhan Redis Hub",
