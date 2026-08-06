@@ -298,6 +298,16 @@ async def fetch_and_cache_batch_quotes(
     Fetches market quotes for a batch of securities, utilizing cache when available,
     and fetching from Dhan API for missing quotes. Caches new results.
     """
+    total_ids = sum(len(ids) for ids in req_payload.values())
+    if total_ids > settings.batch_quotes_max_total_ids:
+        logger.error(f"Batch quotes request exceeds total limit: {total_ids} > {settings.batch_quotes_max_total_ids}")
+        return None
+        
+    for segment, sec_ids in req_payload.items():
+        if len(sec_ids) > settings.batch_quotes_max_per_segment_ids:
+            logger.error(f"Batch quotes request exceeds segment limit for {segment}: {len(sec_ids)} > {settings.batch_quotes_max_per_segment_ids}")
+            return None
+
     final_results = {}
     missing_payload = {}
 
@@ -329,6 +339,7 @@ async def fetch_and_cache_batch_quotes(
     url = f"{settings.dhan_api_base}/marketfeed/quote"
 
     async with httpx.AsyncClient(timeout=30.0) as client:
+        success = False
         for attempt in range(1, 4):
             await rate_governor.wait_for_slot("quote", settings.rate_limit_quote_secs)
             try:
@@ -353,10 +364,17 @@ async def fetch_and_cache_batch_quotes(
                             logger.info(f"Cached quote for security ID {sec_id} under '{cache_key}'")
                             final_results[segment][str(sec_id)] = quote_data
 
-                return {"data": final_results}
-
-            except Exception as e:
-                logger.error(f"Error fetching batch quotes: {e}")
+                success = True
                 break
+
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error fetching batch quotes (attempt {attempt}): {e}")
+                if e.response.status_code < 500 and e.response.status_code != 429:
+                    break
+            except Exception as e:
+                logger.error(f"Error fetching batch quotes (attempt {attempt}): {e}")
+
+        if not success:
+            return None
 
     return {"data": final_results}
