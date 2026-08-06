@@ -13,3 +13,4 @@ All notable changes to the `dhan-redis-hub` project will be documented in this f
 - **FastAPI Proxy Server (`app.py`)**: REST endpoints for health check, manual credential sync, and cache miss proxying.
 - **Docker Setup (`docker-compose.yml`, `Dockerfile`)**: Containerized environment for local or cloud deployment.
 - **Documentation**: Comprehensive PRD, Software Architecture spec, ADR-001, and README.
+Added POST /quotes to app.py
