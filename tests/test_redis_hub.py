@@ -140,4 +140,33 @@ def test_index_scrip_resolution():
         client.get_expiry_list("BANKNIFTY")
         mock_redis.get.assert_called_with("dhan:expirylist:BANKNIFTY")
 
+@pytest.mark.asyncio
+async def test_fetch_and_cache_batch_quotes():
+    from poller import fetch_and_cache_batch_quotes
+    from config import settings
+    
+    mock_redis = MagicMock()
+    fake_auth = json.dumps({"client_id": "123", "access_token": "abc"})
+    
+    def mock_get(key):
+        if key == "dhan:auth": return fake_auth
+        if key == "dhan:quote:123": return json.dumps({"LTP": 100})
+        return None
+    mock_redis.get.side_effect = mock_get
+    
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_resp.json.return_value = {"status": "success", "data": {"IDX_I": {"13": {"LTP": 25000}}}}
+    
+    req_payload = {"NSE_EQ": [123], "IDX_I": [13]}
+    
+    with patch("httpx.AsyncClient.post", new_callable=pytest.importorskip("unittest.mock").AsyncMock) as mock_post:
+        mock_post.return_value = fake_resp
+        res = await fetch_and_cache_batch_quotes(mock_redis, req_payload)
+        
+    assert res == {"data": {"NSE_EQ": {"123": {"LTP": 100}}, "IDX_I": {"13": {"LTP": 25000}}}}
+    
+    mock_redis.get.assert_any_call("dhan:quote:123")
+    mock_redis.get.assert_any_call("dhan:quote:13")
+    mock_redis.set.assert_called_once_with("dhan:quote:13", json.dumps({"LTP": 25000}), ex=settings.ttl_quote)
 

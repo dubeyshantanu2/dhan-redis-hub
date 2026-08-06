@@ -23,6 +23,10 @@ class Config(BaseModel):
     rate_limit_option_chain_secs: float = float(os.getenv("RATE_LIMIT_OPTION_CHAIN_SECS", "2.5"))
     rate_limit_quote_secs: float = float(os.getenv("RATE_LIMIT_QUOTE_SECS", "1.5"))
     rate_limit_candles_secs: float = float(os.getenv("RATE_LIMIT_CANDLES_SECS", "1.5"))
+
+    # Batch Quotes Limits
+    batch_quotes_max_total_ids: int = int(os.getenv("BATCH_QUOTES_MAX_TOTAL_IDS", "1000"))
+    batch_quotes_max_per_segment_ids: int = int(os.getenv("BATCH_QUOTES_MAX_PER_SEGMENT_IDS", "500"))
     
     # TTL Configurations (in seconds)
     ttl_option_chain_market: int = int(os.getenv("TTL_OPTION_CHAIN_MARKET", "15"))

@@ -11,6 +11,7 @@ from poller import (
     fetch_and_cache_option_chain,
     fetch_and_cache_expiry_list,
     fetch_and_cache_quote,
+    fetch_and_cache_batch_quotes,
     fetch_and_cache_candles,
     fetch_and_cache_scrip_master,
 )
@@ -198,6 +199,13 @@ async def get_quote(req: QuoteReq):
     data = await fetch_and_cache_quote(redis_client, req.security_id, req.exchange_segment)
     if data is None:
         raise HTTPException(status_code=502, detail="Failed to fetch quote from Dhan API.")
+    return data
+
+@app.post("/quotes")
+async def get_batch_quotes(req: dict[str, list[int]]):
+    data = await fetch_and_cache_batch_quotes(redis_client, req)
+    if data is None:
+        raise HTTPException(status_code=502, detail="Failed to fetch batch quotes from Dhan API.")
     return data
 
 @app.post("/candles")
