@@ -289,3 +289,74 @@ async def fetch_and_cache_candles(
                 logger.error(f"Error fetching historical candles for {security_id}: {e}")
 
     return None
+
+async def fetch_and_cache_batch_quotes(
+    redis_client: Redis,
+    req_payload: dict[str, list[int]]
+) -> dict | None:
+    """
+    Fetches market quotes for a batch of securities, utilizing cache when available,
+    and fetching from Dhan API for missing quotes. Caches new results.
+    """
+    final_results = {}
+    missing_payload = {}
+
+    # Check cache first
+    for segment, sec_ids in req_payload.items():
+        if segment not in final_results:
+            final_results[segment] = {}
+        for sec_id in sec_ids:
+            cache_key = f"dhan:quote:{sec_id}"
+            cached = redis_client.get(cache_key)
+            if cached:
+                logger.debug(f"Cache HIT for quote '{cache_key}'")
+                final_results[segment][str(sec_id)] = json.loads(cached)
+            else:
+                if segment not in missing_payload:
+                    missing_payload[segment] = []
+                missing_payload[segment].append(int(sec_id))
+
+    if not missing_payload:
+        return {"data": final_results}
+
+    auth = await get_valid_auth(redis_client)
+    headers = {
+        "access-token": auth["access_token"],
+        "client-id": auth["client_id"],
+        "Content-Type": "application/json"
+    }
+
+    url = f"{settings.dhan_api_base}/marketfeed/quote"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for attempt in range(1, 4):
+            await rate_governor.wait_for_slot("quote", settings.rate_limit_quote_secs)
+            try:
+                resp = await client.post(url, headers=headers, json=missing_payload)
+                if resp.status_code == 429:
+                    await rate_governor.handle_429_backoff(attempt)
+                    continue
+
+                resp.raise_for_status()
+                data = resp.json()
+
+                raw_data = data.get("data", {}) if isinstance(data, dict) else {}
+                
+                # Cache and merge the missing ones
+                for segment, sec_ids in missing_payload.items():
+                    seg_data = raw_data.get(segment, {})
+                    for sec_id in sec_ids:
+                        quote_data = seg_data.get(str(sec_id)) or raw_data.get(str(sec_id))
+                        if quote_data and isinstance(quote_data, dict):
+                            cache_key = f"dhan:quote:{sec_id}"
+                            redis_client.set(cache_key, json.dumps(quote_data), ex=settings.ttl_quote)
+                            logger.info(f"Cached quote for security ID {sec_id} under '{cache_key}'")
+                            final_results[segment][str(sec_id)] = quote_data
+
+                return {"data": final_results}
+
+            except Exception as e:
+                logger.error(f"Error fetching batch quotes: {e}")
+                break
+
+    return {"data": final_results}
