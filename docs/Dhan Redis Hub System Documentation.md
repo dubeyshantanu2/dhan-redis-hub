@@ -555,6 +555,16 @@ Implemented a `POST /quotes` endpoint to fetch batch quotes in the `ids_by_segme
 - Enforced payload limits (max 1000 total IDs, max 500 per segment) prior to Redis access to prevent oversized requests.
 - Retry loop handles transient non-429 failures and correctly returns `None` on exhaustion to trigger a 502 Bad Gateway response in `app.py`.
 
-[[Kronos]] [[Dhan API]]
+## 2026-08-06 13:51 · Fixed Global 429 Rate Governor Loophole
+
+Resolved an issue where the `dhan-redis-hub` was receiving HTTP 429 Rate Limit errors from Dhan API despite the `RateGovernor` being active. The root causes were twofold:
+1. **Connection Latency Variance**: Instantiating a new `httpx.AsyncClient` per request caused unpooled TCP connections, leading to latency variances that bunched HTTP requests together at the Dhan edge proxy, bypassing the governor's dispatch spacing.
+2. **Local vs Global Backoff**: When a 429 occurred, `handle_429_backoff` slept the local task for 2 seconds but did not update the `_global_last_call_time`, allowing concurrent requests to slip through and receive their own 429s.
+
+**Decisions (PR #12)**
+- Extracted `httpx.AsyncClient` to a global singleton in `poller.py` to enable connection pooling and stabilize request dispatch latency.
+- Modified `handle_429_backoff` in `governor.py` to advance `_global_last_call_time` by the backoff duration inside the lock, enforcing a true global pause across all background tasks and incoming web requests.
+
+[[Rate Governor]] [[Dhan API]] [[Kronos]]
 
 ---

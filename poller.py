@@ -9,6 +9,10 @@ from auth_sync import sync_dhan_credentials
 
 logger = logging.getLogger("dhan-redis-hub.poller")
 
+# Global HTTP client to reuse TCP connections, preventing connection setup latency variance
+# from bunching up HTTP requests dispatched by the RateGovernor and causing 429s.
+http_client = httpx.AsyncClient(timeout=30.0)
+
 async def get_valid_auth(redis_client: Redis) -> dict:
     """Helper to retrieve valid authentication details from Redis, resyncing if missing."""
     auth_str = redis_client.get("dhan:auth")
@@ -37,7 +41,8 @@ async def fetch_and_cache_scrip_master(redis_client: Redis) -> dict | None:
         return json.loads(cached)
 
     logger.info("Downloading Dhan Scrip Master CSV...")
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    client = http_client
+    if True:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
@@ -99,7 +104,8 @@ async def fetch_and_cache_option_chain(
 
     url = f"{settings.dhan_api_base}/optionchain"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    client = http_client
+    if True:
         for attempt in range(1, 4):
             await rate_governor.wait_for_slot("optionchain", settings.rate_limit_option_chain_secs)
             try:
@@ -157,7 +163,8 @@ async def fetch_and_cache_expiry_list(
 
     await rate_governor.wait_for_slot("expirylist", 1.0)
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    client = http_client
+    if True:
         try:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
@@ -200,7 +207,8 @@ async def fetch_and_cache_quote(
 
     url = f"{settings.dhan_api_base}/marketfeed/quote"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    client = http_client
+    if True:
         for attempt in range(1, 4):
             await rate_governor.wait_for_slot("quote", settings.rate_limit_quote_secs)
             try:
@@ -268,7 +276,8 @@ async def fetch_and_cache_candles(
     url = f"{settings.dhan_api_base}/{endpoint}"
     ttl = settings.ttl_candles_intraday if is_intraday else settings.ttl_candles_daily
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    client = http_client
+    if True:
         for attempt in range(1, 4):
             await rate_governor.wait_for_slot("candles", settings.rate_limit_candles_secs)
             try:
@@ -338,7 +347,8 @@ async def fetch_and_cache_batch_quotes(
 
     url = f"{settings.dhan_api_base}/marketfeed/quote"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    client = http_client
+    if True:
         success = False
         for attempt in range(1, 4):
             await rate_governor.wait_for_slot("quote", settings.rate_limit_quote_secs)
