@@ -57,6 +57,14 @@ class RateGovernor:
             )
         except Exception:
             pass
+
+        # Update the global last call time so that ANY OTHER task calling wait_for_slot
+        # during this period will be forced to wait.
+        async with self._lock:
+            future_time = time.monotonic() + backoff
+            if future_time > self._global_last_call_time:
+                self._global_last_call_time = future_time
+
         await asyncio.sleep(backoff)
 
 rate_governor = RateGovernor()
